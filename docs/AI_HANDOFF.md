@@ -175,6 +175,7 @@ Several fixes were required due to Flutter stable version differences and analyz
 - `CupertinoTheme.of(context).brightness` can be nullable on some SDK versions, so code coalesces to `Brightness.light`
 - `CupertinoTabBar` cannot be `const` in this code path due to const-eval restrictions on the items list
 - `cupertino_icons` dependency is required or icons may appear as missing glyph boxes
+- Prefer `RegExp(..., caseSensitive: false)` over inline `(?i)` flags to satisfy Dart analyzer regex validation
 - Placeholder `test/widget_test.dart` prevents generated default `MyApp` test analyzer failures after CI runs `flutter create`
 
 ## Files Most Likely to Be Edited Next

@@ -579,7 +579,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 );
                 if (!isRead) {
                   item = Dismissible(
-                    key: ValueKey<String>('${articleKey}::$index'),
+                    key: ValueKey<String>('$articleKey::$index'),
                     direction: DismissDirection.endToStart,
                     background: const SizedBox.shrink(),
                     secondaryBackground: const _MarkReadSwipeBackground(
@@ -592,7 +592,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   );
                 } else {
                   item = KeyedSubtree(
-                    key: ValueKey<String>('${articleKey}::$index'),
+                    key: ValueKey<String>('$articleKey::$index'),
                     child: item,
                   );
                 }
@@ -1237,7 +1237,7 @@ class ArticleScreen extends StatelessWidget {
                             ),
                           )
                         else
-                          SelectableText(
+                          Text(
                             bodyText,
                             style: TextStyle(
                               fontSize: 16,
@@ -2538,11 +2538,11 @@ DateTime? _tryParseArticleDate(String? value) {
 String _articleBodyText(String value) {
   if (value.trim().isEmpty) return '';
   return value
-      .replaceAll(RegExp(r'(?i)<br\s*/?>'), '\n')
-      .replaceAll(RegExp(r'(?i)</p>'), '\n\n')
-      .replaceAll(RegExp(r'(?i)</div>'), '\n')
-      .replaceAll(RegExp(r'(?i)</li>'), '\n')
-      .replaceAll(RegExp(r'(?i)<li[^>]*>'), '- ')
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'</p>', caseSensitive: false), '\n\n')
+      .replaceAll(RegExp(r'</div>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'</li>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<li[^>]*>', caseSensitive: false), '- ')
       .replaceAll(RegExp(r'<[^>]*>'), ' ')
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&amp;', '&')
