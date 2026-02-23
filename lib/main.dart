@@ -127,18 +127,20 @@ class FeedScreen extends StatefulWidget {
 class _FeedScreenState extends State<FeedScreen> {
   static const _defaultFeed = 'https://hnrss.org/frontpage';
 
-  final TextEditingController _urlController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
 
   bool _isLoading = false;
   String? _error;
   FeedLoadResult? _feed;
   DateTime? _lastLoadedAt;
   int _seenFeedSelectionTick = 0;
+  String _currentFeedUrl = _defaultFeed;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _urlController.text = widget.controller.activeFeedUrl.isEmpty
+    _currentFeedUrl = widget.controller.activeFeedUrl.isEmpty
         ? _defaultFeed
         : widget.controller.activeFeedUrl;
     _seenFeedSelectionTick = widget.controller.feedSelectionTick;
@@ -159,7 +161,7 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   void dispose() {
     widget.controller.removeListener(_handleControllerChange);
-    _urlController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -180,18 +182,15 @@ class _FeedScreenState extends State<FeedScreen> {
       return;
     }
 
-    _urlController.value = TextEditingValue(
-      text: nextUrl,
-      selection: TextSelection.collapsed(offset: nextUrl.length),
-    );
+    _currentFeedUrl = nextUrl;
     _loadFeed();
   }
 
   Future<void> _loadFeed() async {
-    final rawUrl = _urlController.text.trim();
+    final rawUrl = _currentFeedUrl.trim();
     if (rawUrl.isEmpty) {
       setState(() {
-        _error = 'Enter an RSS or Atom feed URL.';
+        _error = 'Add an RSS or Atom feed URL in Library.';
       });
       return;
     }
@@ -214,6 +213,7 @@ class _FeedScreenState extends State<FeedScreen> {
       widget.controller.recordFeed(uri.toString());
       if (!mounted) return;
       setState(() {
+        _currentFeedUrl = uri.toString();
         _feed = result;
         _lastLoadedAt = DateTime.now();
       });
@@ -252,24 +252,9 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = CupertinoTheme.of(context);
-
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('RSS Reader'),
-        leading: CupertinoButton(
-          padding: EdgeInsets.zero,
-          minimumSize: const Size.square(28),
-          onPressed: _isLoading
-              ? null
-              : () {
-                  final url = _urlController.text.trim();
-                  if (url.isEmpty) return;
-                  widget.controller.recordFeed(url);
-                  _showNotice('Saved feed URL.');
-                },
-          child: const Icon(CupertinoIcons.bookmark),
-        ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           minimumSize: const Size.square(28),
@@ -283,81 +268,51 @@ class _FeedScreenState extends State<FeedScreen> {
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+              child: CupertinoSearchTextField(
+                controller: _searchController,
+                placeholder: 'Search articles in current feed',
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Row(
                 children: [
+                  const Icon(
+                    CupertinoIcons.link,
+                    size: 14,
+                    color: CupertinoColors.systemGrey,
+                  ),
+                  const SizedBox(width: 6),
                   Expanded(
-                    child: CupertinoTextField(
-                      controller: _urlController,
-                      keyboardType: TextInputType.url,
-                      placeholder: 'https://example.com/feed.xml',
-                      prefix: const Padding(
-                        padding: EdgeInsets.only(left: 10),
-                        child: Icon(
-                          CupertinoIcons.link,
-                          size: 18,
-                          color: CupertinoColors.systemGrey,
-                        ),
+                    child: Text(
+                      _currentFeedUrl.isEmpty
+                          ? 'No feed selected. Add one in Library.'
+                          : _hostOnly(_currentFeedUrl),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _secondaryLabelColor(context),
                       ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 12,
-                      ),
-                      onSubmitted: (_) => _loadFeed(),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  CupertinoButton(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    color: theme.primaryColor,
-                    borderRadius: BorderRadius.circular(10),
-                    onPressed: _isLoading ? null : _loadFeed,
-                    child: const Text('Load'),
-                  ),
+                  if (_searchQuery.trim().isNotEmpty)
+                    Text(
+                      '${_filteredArticles(_feed?.articles ?? const <FeedArticle>[]).length} matches',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _secondaryLabelColor(context),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (widget.controller.savedFeeds.isNotEmpty)
-              SizedBox(
-                height: 40,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  scrollDirection: Axis.horizontal,
-                  itemBuilder: (context, index) {
-                    final url = widget.controller.savedFeeds[index];
-                    return GestureDetector(
-                      onTap: () {
-                        _urlController.value = TextEditingValue(
-                          text: url,
-                          selection: TextSelection.collapsed(offset: url.length),
-                        );
-                        _loadFeed();
-                      },
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _cardColor(context),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: _borderColor(context)),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          child: Text(
-                            _hostOnly(url),
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemCount: widget.controller.savedFeeds.length,
-                ),
-              ),
-            if (widget.controller.savedFeeds.isNotEmpty) const SizedBox(height: 8),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -401,21 +356,22 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Widget _buildFeedBody() {
-    final articles = _feed?.articles ?? const <FeedArticle>[];
+    final allArticles = _feed?.articles ?? const <FeedArticle>[];
+    final articles = _filteredArticles(allArticles);
 
-    if (_isLoading && articles.isEmpty) {
+    if (_isLoading && allArticles.isEmpty) {
       return const Center(child: CupertinoActivityIndicator(radius: 14));
     }
 
-    if (articles.isEmpty) {
+    if (allArticles.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'No articles yet. Paste an RSS or Atom feed URL and tap Load.',
+            'No articles yet. Add a feed URL in Library and open it.',
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: CupertinoColors.systemGrey,
+            style: TextStyle(
+              color: _secondaryLabelColor(context),
               fontSize: 15,
             ),
           ),
@@ -441,6 +397,29 @@ class _FeedScreenState extends State<FeedScreen> {
             ),
           ),
         ),
+        if (articles.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _cardColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _borderColor(context)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    'No articles match \"${_searchQuery.trim()}\".',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _secondaryLabelColor(context),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
           sliver: SliverList(
@@ -464,19 +443,25 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  void _showNotice(String message) {
-    showCupertinoDialog<void>(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+  List<FeedArticle> _filteredArticles(List<FeedArticle> articles) {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return articles;
+    return articles.where((article) => _matchesSearchQuery(article, query)).toList();
+  }
+
+  bool _matchesSearchQuery(FeedArticle article, String query) {
+    final haystacks = <String>[
+      article.title,
+      article.summary,
+      article.publishedLabel ?? '',
+      article.link ?? '',
+    ];
+    for (final value in haystacks) {
+      if (value.toLowerCase().contains(query)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -505,20 +490,11 @@ class LibraryScreen extends StatelessWidget {
               children: [
                 _SectionCard(
                   title: 'Saved Feeds',
-                  actionLabel:
-                      controller.savedFeeds.isEmpty ? null : 'Clear',
-                  onAction: controller.savedFeeds.isEmpty
-                      ? null
-                      : () => _confirm(
-                            context,
-                            title: 'Clear Saved Feeds',
-                            message: 'Remove all saved feed URLs?',
-                            confirmLabel: 'Clear',
-                            onConfirm: controller.clearSavedFeeds,
-                          ),
+                  actionLabel: 'Add',
+                  onAction: () => _showAddFeedDialog(context),
                   child: controller.savedFeeds.isEmpty
                       ? const _EmptySectionMessage(
-                          message: 'Saved feeds will appear here.',
+                          message: 'No feeds saved yet. Tap Add to save a feed URL.',
                         )
                       : Column(
                           children: [
@@ -598,6 +574,51 @@ class LibraryScreen extends StatelessWidget {
     );
   }
 
+  void _showAddFeedDialog(BuildContext context) {
+    final textController = TextEditingController(text: 'https://');
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('Add Feed URL'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            controller: textController,
+            keyboardType: TextInputType.url,
+            placeholder: 'https://example.com/feed.xml',
+            autofocus: true,
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () {
+              final raw = textController.text.trim();
+              final uri = Uri.tryParse(raw);
+              final isValid = uri != null && uri.hasScheme && uri.host.isNotEmpty;
+              if (!isValid) {
+                Navigator.of(dialogContext).pop();
+                _showInfoDialog(
+                  context,
+                  title: 'Invalid URL',
+                  message: 'Enter a valid feed URL (for example: https://site.com/feed.xml).',
+                );
+                return;
+              }
+
+              Navigator.of(dialogContext).pop();
+              onOpenFeed(uri.toString());
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _historySubtitle(ArticleHistoryEntry entry) {
     final parts = <String>[];
     if (entry.feedTitle != null && entry.feedTitle!.trim().isNotEmpty) {
@@ -631,6 +652,26 @@ class LibraryScreen extends StatelessWidget {
               onConfirm();
             },
             child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showInfoDialog(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) {
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
           ),
         ],
       ),
@@ -772,9 +813,9 @@ class ArticleScreen extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 article.publishedLabel!,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: CupertinoColors.systemGrey,
+                  color: _secondaryLabelColor(context),
                 ),
               ),
             ],
@@ -790,11 +831,11 @@ class ArticleScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Link',
                         style: TextStyle(
                           fontSize: 12,
-                          color: CupertinoColors.systemGrey,
+                          color: _secondaryLabelColor(context),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -868,7 +909,11 @@ class ArticleScreen extends StatelessWidget {
               article.summary.trim().isEmpty
                   ? 'No description provided by the feed.'
                   : _plainText(article.summary),
-              style: const TextStyle(fontSize: 15, height: 1.35),
+              style: TextStyle(
+                fontSize: 15,
+                height: 1.35,
+                color: _labelColor(context),
+              ),
             ),
           ],
         ),
@@ -1510,18 +1555,18 @@ class _FeedHeaderCard extends StatelessWidget {
                 _plainTextPreview(subtitle!, 140),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: CupertinoColors.systemGrey,
+                  color: _secondaryLabelColor(context),
                 ),
               ),
             ],
             const SizedBox(height: 10),
             Text(
               '$feedTypeLabel  |  $itemCount articles${lastLoadedAt == null ? '' : '  |  Updated ${_formatTime(lastLoadedAt!)}'}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: CupertinoColors.systemGrey2,
+                color: _secondaryLabelColor(context),
               ),
             ),
           ],
@@ -1569,9 +1614,9 @@ class _ArticleTile extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         article.publishedLabel!,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: CupertinoColors.systemGrey,
+                          color: _secondaryLabelColor(context),
                         ),
                       ),
                     ],
@@ -1581,9 +1626,9 @@ class _ArticleTile extends StatelessWidget {
                         _plainTextPreview(article.summary, 180),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: CupertinoColors.label,
+                          color: _labelColor(context),
                         ),
                       ),
                     ],
@@ -1696,8 +1741,8 @@ class _LibraryRow extends StatelessWidget {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: onTap == null
-                        ? CupertinoColors.systemGrey
-                        : CupertinoColors.label,
+                        ? _secondaryLabelColor(context)
+                        : _labelColor(context),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -1705,9 +1750,9 @@ class _LibraryRow extends StatelessWidget {
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: CupertinoColors.systemGrey,
+                    color: _secondaryLabelColor(context),
                   ),
                 ),
               ],
@@ -1777,9 +1822,9 @@ class _StaticInfoRow extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: CupertinoColors.systemGrey,
+                  color: _secondaryLabelColor(context),
                 ),
               ),
             ],
@@ -1806,9 +1851,9 @@ class _EmptySectionMessage extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Text(
         message,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
-          color: CupertinoColors.systemGrey,
+          color: _secondaryLabelColor(context),
         ),
       ),
     );
@@ -1836,6 +1881,20 @@ Color _secondaryButtonColor(BuildContext context) {
   );
 }
 
+Color _labelColor(BuildContext context) {
+  return CupertinoDynamicColor.resolve(
+    CupertinoColors.label,
+    context,
+  );
+}
+
+Color _secondaryLabelColor(BuildContext context) {
+  return CupertinoDynamicColor.resolve(
+    CupertinoColors.secondaryLabel,
+    context,
+  );
+}
+
 String _hostOnly(String rawUrl) {
   final uri = Uri.tryParse(rawUrl);
   final host = uri?.host.trim() ?? '';
@@ -1857,7 +1916,15 @@ String _plainText(String value) {
       .replaceAll('&lt;', '<')
       .replaceAll('&gt;', '>')
       .replaceAll('&quot;', '"')
+      .replaceAll('&ldquo;', '"')
+      .replaceAll('&rdquo;', '"')
+      .replaceAll('&lsquo;', "'")
+      .replaceAll('&rsquo;', "'")
       .replaceAll('&#39;', "'")
+      .replaceAll('&#8216;', "'")
+      .replaceAll('&#8217;', "'")
+      .replaceAll('&#8220;', '"')
+      .replaceAll('&#8221;', '"')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 }
