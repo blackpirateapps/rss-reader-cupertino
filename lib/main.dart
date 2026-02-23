@@ -1114,9 +1114,7 @@ class FeedRepository {
             title: _nonEmpty(item.title, fallback: 'Untitled article'),
             summary: (item.description ?? '').trim(),
             link: (item.link ?? '').trim().isEmpty ? null : item.link!.trim(),
-            publishedLabel: (item.pubDate ?? '').trim().isEmpty
-                ? null
-                : item.pubDate!.trim(),
+            publishedLabel: _nullIfBlank(item.pubDate?.toString()),
           ),
         )
         .toList();
