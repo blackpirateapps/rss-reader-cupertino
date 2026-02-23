@@ -8,9 +8,11 @@ Current major features:
 - RSS + Atom feed parsing
 - Unread article timeline aggregated across saved feeds
 - Feed filters for All / Unread / Read in the Feed tab (Unread default)
+- Source-feed filter pills in the Feed tab (multi-select; can scope to one or more feeds)
 - Swipe-to-mark-read on articles
 - Native Cupertino article detail preview (single scroll, no embedded reader WebView)
 - In-app article web view (`webview_flutter`) for source pages
+- Reader mode article fetch/parse view for source pages (Instapaper-style simplified reading)
 - Saved feeds, read marks, and recent article history (local persistence via `shared_preferences`)
 - Feed URL backup import/export (plain text file, one URL per line)
 - Settings page with dark mode toggle
@@ -88,11 +90,16 @@ Current behavior:
 - Feed tab shows:
   - Search field (article filtering within the unread aggregate list)
   - Cupertino pill/segmented filters for All / Unread / Read (default Unread)
+  - Source filter pills (`All Feeds` + per-feed chips, multi-select)
   - Loaded feed count indicator
   - Refresh and quick-add (`+`) buttons in nav bar
   - Feed header card and article list
-  - Swipe gesture (`end-to-start`) on article rows to mark as read
+  - Swipe gesture (`end-to-start`) on unread article rows to mark as read
 - Aggregated article rows include source feed title (when available)
+
+Read/unread behavior updates:
+- Opening an article from Feed now marks it as read immediately (before navigation)
+- Opening an article from Recent Articles also marks it as read immediately when possible (usually via link key)
 
 Search behavior:
 - Filters by title, summary, published label, or link (case-insensitive)
@@ -106,8 +113,9 @@ Saved Feeds section:
 - Header action is `Add`
 - Add flow uses a Cupertino dialog with URL validation
 - Tapping a saved feed selects it and switches to the Feed tab
+- Saved feed tap now scopes the Feed tab to that specific source feed (single-source filter)
 - Delete button removes a saved feed
-- Even though Feed tab is aggregated, selecting a feed still updates `activeFeedUrl` and triggers a refresh (kept for compatibility and future use)
+- Feed tab remains aggregated by default, but `activeFeedUrl` is used as a one-tap source filter handoff from Library
 
 Recent Articles section:
 - Shows locally stored history
@@ -123,7 +131,14 @@ Storage / settings behavior:
 Article reader:
 - `ArticleScreen` now uses a native Cupertino scroll view with a single title/header and native text preview of feed content
 - “Read Full Story” opens the source URL page in the dedicated browser WebView screen
+- “Reader Mode” fetches the source page HTML, extracts a readable article body, and renders a simplified styled reading view
 - Copy link is an icon-only action in the article header card
+
+Reader mode implementation notes:
+- Uses `http` + `package:html` (DOM parsing), not a remote API/service
+- Heuristics prefer `article`/`main`/common content selectors, then score candidate containers by text density and paragraph count
+- Sanitizes content (removes scripts/forms/ads-like blocks, strips event/style attrs, resolves relative URLs)
+- Reader links are intercepted and opened in the in-app browser WebView screen
 
 Feed backup import/export:
 - Library tab includes import/export actions for feed URLs
@@ -176,6 +191,7 @@ Several fixes were required due to Flutter stable version differences and analyz
 - `CupertinoTabBar` cannot be `const` in this code path due to const-eval restrictions on the items list
 - `cupertino_icons` dependency is required or icons may appear as missing glyph boxes
 - Prefer `RegExp(..., caseSensitive: false)` over inline `(?i)` flags to satisfy Dart analyzer regex validation
+- Prefer `minimumSize` on `CupertinoButton` (avoid `minSize`) for Flutter stable compatibility
 - Placeholder `test/widget_test.dart` prevents generated default `MyApp` test analyzer failures after CI runs `flutter create`
 
 ## Files Most Likely to Be Edited Next

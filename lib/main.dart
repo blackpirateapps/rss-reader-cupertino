@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webfeed_plus/webfeed_plus.dart';
@@ -145,6 +147,7 @@ class _FeedScreenState extends State<FeedScreen> {
   String _searchQuery = '';
   int _loadedFeedCount = 0;
   FeedVisibilityFilter _visibilityFilter = FeedVisibilityFilter.unread;
+  Set<String> _selectedSourceFeedUrls = <String>{};
 
   @override
   void initState() {
@@ -178,8 +181,13 @@ class _FeedScreenState extends State<FeedScreen> {
 
     if (hasFeedSelectionChange) {
       _seenFeedSelectionTick = widget.controller.feedSelectionTick;
+      final selected = _nullIfBlank(widget.controller.activeFeedUrl);
+      _selectedSourceFeedUrls = selected == null ? <String>{} : <String>{selected};
       _loadFeed();
     } else {
+      final availableSources = widget.controller.savedFeeds.toSet();
+      _selectedSourceFeedUrls =
+          _selectedSourceFeedUrls.where(availableSources.contains).toSet();
       setState(() {});
     }
   }
@@ -259,6 +267,7 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   void _openArticle(FeedArticle article) {
+    widget.controller.markArticleRead(_articleReadKey(article));
     widget.controller.recordArticle(
       ArticleHistoryEntry(
         title: article.title,
@@ -321,7 +330,8 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     final allArticles = _feed?.articles ?? const <FeedArticle>[];
-    final visibleArticles = _articlesForCurrentFilter(allArticles);
+    final sourceFilteredArticles = _articlesForSourceFilter(allArticles);
+    final visibleArticles = _articlesForCurrentFilter(sourceFilteredArticles);
     final matchingVisibleCount = _filteredVisibleArticles(visibleArticles).length;
 
     return CupertinoPageScaffold(
@@ -428,6 +438,50 @@ class _FeedScreenState extends State<FeedScreen> {
                 ],
               ),
             ),
+            if (_sourceFilterOptions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                child: SizedBox(
+                  height: 34,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _sourceFilterOptions.length + 1,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      if (index == 0) {
+                        final allSelected = _selectedSourceFeedUrls.isEmpty;
+                        return _FilterPill(
+                          label: 'All Feeds',
+                          selected: allSelected,
+                          onTap: () {
+                            setState(() {
+                              _selectedSourceFeedUrls = <String>{};
+                            });
+                          },
+                        );
+                      }
+                      final option = _sourceFilterOptions[index - 1];
+                      final selected =
+                          _selectedSourceFeedUrls.contains(option.sourceUrl);
+                      return _FilterPill(
+                        label: option.label,
+                        selected: selected,
+                        onTap: () {
+                          setState(() {
+                            final next = <String>{..._selectedSourceFeedUrls};
+                            if (selected) {
+                              next.remove(option.sourceUrl);
+                            } else {
+                              next.add(option.sourceUrl);
+                            }
+                            _selectedSourceFeedUrls = next;
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -472,7 +526,8 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildFeedBody() {
     final allArticles = _feed?.articles ?? const <FeedArticle>[];
-    final visibleArticles = _articlesForCurrentFilter(allArticles);
+    final sourceFilteredArticles = _articlesForSourceFilter(allArticles);
+    final visibleArticles = _articlesForCurrentFilter(sourceFilteredArticles);
     final articles = _filteredVisibleArticles(visibleArticles);
     final showSearchEmptyState =
         visibleArticles.isEmpty && _searchQuery.trim().isEmpty;
@@ -510,7 +565,7 @@ class _FeedScreenState extends State<FeedScreen> {
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
             child: _FeedHeaderCard(
               title: _feed?.title ?? 'Feed',
-              subtitle: _feed?.description,
+              subtitle: _feedHeaderSubtitle(),
               itemCount: articles.length,
               lastLoadedAt: _lastLoadedAt,
               feedTypeLabel: _feedFilterLabel(_visibilityFilter),
@@ -611,6 +666,14 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
+  List<FeedArticle> _articlesForSourceFilter(List<FeedArticle> articles) {
+    if (_selectedSourceFeedUrls.isEmpty) return articles;
+    return articles.where((article) {
+      final sourceUrl = _nullIfBlank(article.sourceUrl);
+      return sourceUrl != null && _selectedSourceFeedUrls.contains(sourceUrl);
+    }).toList();
+  }
+
   List<FeedArticle> _articlesForCurrentFilter(List<FeedArticle> articles) {
     return articles.where((article) {
       final isRead = widget.controller.isArticleRead(_articleReadKey(article));
@@ -642,14 +705,34 @@ class _FeedScreenState extends State<FeedScreen> {
     }
   }
 
+  String? _feedHeaderSubtitle() {
+    final base = _feed?.description;
+    if (_selectedSourceFeedUrls.isEmpty) return base;
+    final selectedLabels = _sourceFilterOptions
+        .where((option) => _selectedSourceFeedUrls.contains(option.sourceUrl))
+        .map((option) => option.label)
+        .toList();
+    if (selectedLabels.isEmpty) return base;
+    final sourceText = selectedLabels.length <= 2
+        ? selectedLabels.join(', ')
+        : '${selectedLabels.take(2).join(', ')} +${selectedLabels.length - 2}';
+    if (base == null || base.trim().isEmpty) {
+      return 'Sources: $sourceText';
+    }
+    return '$base  |  Sources: $sourceText';
+  }
+
   String _emptyStateMessageForFilter() {
+    final sourceScope = _selectedSourceFeedUrls.isEmpty
+        ? ''
+        : ' for the selected feed filter';
     switch (_visibilityFilter) {
       case FeedVisibilityFilter.all:
-        return 'No articles available yet. Pull to refresh after adding feeds.';
+        return 'No articles available$sourceScope yet. Pull to refresh after adding feeds.';
       case FeedVisibilityFilter.unread:
-        return 'All caught up. Swipe actions marked articles as read.';
+        return 'All caught up$sourceScope. Swipe actions marked articles as read.';
       case FeedVisibilityFilter.read:
-        return 'No read stories yet. Mark articles as read to collect them here.';
+        return 'No read stories$sourceScope yet. Open articles to mark them read.';
     }
   }
 
@@ -667,6 +750,22 @@ class _FeedScreenState extends State<FeedScreen> {
       }
     }
     return false;
+  }
+
+  List<_SourceFilterOption> get _sourceFilterOptions {
+    final byUrl = <String, _SourceFilterOption>{};
+    for (final url in widget.controller.savedFeeds) {
+      byUrl[url] = _SourceFilterOption(sourceUrl: url, label: _hostOnly(url));
+    }
+    for (final article in _feed?.articles ?? const <FeedArticle>[]) {
+      final sourceUrl = _nullIfBlank(article.sourceUrl);
+      if (sourceUrl == null) continue;
+      final label = _nullIfBlank(article.sourceTitle) ?? _hostOnly(sourceUrl);
+      byUrl[sourceUrl] = _SourceFilterOption(sourceUrl: sourceUrl, label: label);
+    }
+    final options = byUrl.values.toList();
+    options.sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+    return options;
   }
 }
 
@@ -781,6 +880,9 @@ class LibraryScreen extends StatelessWidget {
                                 subtitle: _historySubtitle(controller.articleHistory[i]),
                                 onTap: () {
                                   final entry = controller.articleHistory[i];
+                                  controller.markArticleRead(
+                                    _articleReadKey(entry.toFeedArticle()),
+                                  );
                                   Navigator.of(context).push(
                                     CupertinoPageRoute<void>(
                                       builder: (_) => ArticleScreen(
@@ -1148,35 +1250,59 @@ class ArticleScreen extends StatelessWidget {
                         ],
                         if (hasLink) ...[
                           const SizedBox(height: 12),
-                          Row(
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Expanded(
-                                child: CupertinoButton(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  color: CupertinoColors.activeBlue,
-                                  borderRadius: BorderRadius.circular(12),
-                                  onPressed: () {
-                                    final uri = Uri.tryParse(article.link!);
-                                    if (uri == null) return;
-                                    Navigator.of(context).push(
-                                      CupertinoPageRoute<void>(
-                                        builder: (_) => ArticleWebViewScreen(
-                                          title: article.title,
-                                          uri: uri,
-                                        ),
+                              CupertinoButton(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                color: CupertinoColors.activeBlue,
+                                borderRadius: BorderRadius.circular(12),
+                                onPressed: () {
+                                  final uri = Uri.tryParse(article.link!);
+                                  if (uri == null) return;
+                                  Navigator.of(context).push(
+                                    CupertinoPageRoute<void>(
+                                      builder: (_) => ArticleWebViewScreen(
+                                        title: article.title,
+                                        uri: uri,
                                       ),
-                                    );
-                                  },
-                                  child: const Text(
-                                    'Read Full Story',
-                                    style: TextStyle(color: CupertinoColors.white),
-                                  ),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  'Read Full Story',
+                                  style: TextStyle(color: CupertinoColors.white),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              CupertinoButton(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                                color: _secondaryButtonColor(context),
+                                borderRadius: BorderRadius.circular(12),
+                                onPressed: () {
+                                  final uri = Uri.tryParse(article.link!);
+                                  if (uri == null) return;
+                                  Navigator.of(context).push(
+                                    CupertinoPageRoute<void>(
+                                      builder: (_) => ArticleReaderModeScreen(
+                                        title: article.title,
+                                        uri: uri,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Text(
+                                  'Reader Mode',
+                                  style: TextStyle(color: _labelColor(context)),
+                                ),
+                              ),
                               CupertinoButton(
                                 padding: EdgeInsets.zero,
                                 minimumSize: const Size.square(40),
@@ -1452,6 +1578,239 @@ class _ArticleWebViewScreenState extends State<ArticleWebViewScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class ArticleReaderModeScreen extends StatefulWidget {
+  const ArticleReaderModeScreen({
+    super.key,
+    required this.title,
+    required this.uri,
+  });
+
+  final String title;
+  final Uri uri;
+
+  @override
+  State<ArticleReaderModeScreen> createState() => _ArticleReaderModeScreenState();
+}
+
+class _ArticleReaderModeScreenState extends State<ArticleReaderModeScreen> {
+  WebViewController? _webViewController;
+  bool _isLoading = true;
+  String? _error;
+  ReaderModeDocument? _readerDocument;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReaderMode();
+  }
+
+  Future<void> _loadReaderMode() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final doc = await ReaderModeRepository.fetch(widget.uri);
+      if (!mounted) return;
+
+      final controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.disabled)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onNavigationRequest: (request) {
+              final url = request.url;
+              if (url == 'about:blank' || url.startsWith('data:')) {
+                return NavigationDecision.navigate;
+              }
+              if (!mounted) return NavigationDecision.prevent;
+              final target = Uri.tryParse(request.url);
+              if (target == null) return NavigationDecision.prevent;
+              if (target.scheme != 'http' && target.scheme != 'https') {
+                return NavigationDecision.prevent;
+              }
+              Navigator.of(context).push(
+                CupertinoPageRoute<void>(
+                  builder: (_) => ArticleWebViewScreen(
+                    title: doc.title,
+                    uri: target,
+                  ),
+                ),
+              );
+              return NavigationDecision.prevent;
+            },
+          ),
+        );
+      await controller.loadHtmlString(
+        _buildReaderModeHtmlDocument(doc, context),
+      );
+      if (!mounted) return;
+      setState(() {
+        _readerDocument = doc;
+        _webViewController = controller;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _readerDocument?.siteName ??
+        _readerDocument?.title ??
+        widget.uri.host;
+
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size.square(28),
+          onPressed: _isLoading ? null : _loadReaderMode,
+          child: _isLoading
+              ? const CupertinoActivityIndicator(radius: 8)
+              : const Icon(CupertinoIcons.refresh),
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemRed.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: CupertinoColors.systemRed.withValues(alpha: 0.25),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          CupertinoIcons.exclamationmark_triangle,
+                          color: CupertinoColors.systemRed,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(
+                              color: CupertinoColors.systemRed,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: Stack(
+                children: [
+                  if (_webViewController != null)
+                    WebViewWidget(controller: _webViewController!)
+                  else
+                    Container(color: _cardColor(context)),
+                  if (_isLoading)
+                    const Center(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemBackground,
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          child: CupertinoActivityIndicator(radius: 12),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ReaderModeDocument {
+  const ReaderModeDocument({
+    required this.title,
+    required this.siteName,
+    required this.sourceUrl,
+    required this.contentHtml,
+    this.byline,
+  });
+
+  final String title;
+  final String siteName;
+  final String sourceUrl;
+  final String contentHtml;
+  final String? byline;
+}
+
+class ReaderModeRepository {
+  static Future<ReaderModeDocument> fetch(Uri uri) async {
+    final response = await http.get(
+      uri,
+      headers: const {
+        'User-Agent': 'rss-reader-cupertino/0.3 (+flutter reader-mode)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('HTTP ${response.statusCode} while loading article.');
+    }
+
+    final document = html_parser.parse(response.body);
+    _removeReaderNoise(document);
+
+    final contentNode = _extractReaderContentNode(document);
+    if (contentNode == null) {
+      throw Exception('Could not extract readable content from this page.');
+    }
+
+    _sanitizeReaderContent(contentNode, uri);
+    final contentHtml = contentNode.innerHtml.trim();
+    final contentText = contentNode.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (contentHtml.isEmpty || contentText.length < 80) {
+      throw Exception('This page did not provide enough readable article content.');
+    }
+
+    final title = _readerTitle(document, fallback: uri.host);
+    final siteName = _readerSiteName(document, fallback: uri.host);
+    final byline = _readerByline(document);
+
+    return ReaderModeDocument(
+      title: title,
+      siteName: siteName,
+      sourceUrl: uri.toString(),
+      contentHtml: contentHtml,
+      byline: byline,
     );
   }
 }
@@ -2433,6 +2792,47 @@ class _MarkReadSwipeBackground extends StatelessWidget {
   }
 }
 
+class _FilterPill extends StatelessWidget {
+  const _FilterPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoButton(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      minimumSize: Size.zero,
+      borderRadius: BorderRadius.circular(999),
+      color: selected ? CupertinoColors.activeBlue : _secondaryButtonColor(context),
+      onPressed: onTap,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: selected ? CupertinoColors.white : _labelColor(context),
+        ),
+      ),
+    );
+  }
+}
+
+class _SourceFilterOption {
+  const _SourceFilterOption({
+    required this.sourceUrl,
+    required this.label,
+  });
+
+  final String sourceUrl;
+  final String label;
+}
+
 Color _cardColor(BuildContext context) {
   return CupertinoDynamicColor.resolve(
     CupertinoColors.secondarySystemGroupedBackground,
@@ -2564,6 +2964,310 @@ String _articleBodyText(String value) {
       .replaceAll(RegExp(r' {2,}'), ' ')
       .trim();
 }
+
+String _buildReaderModeHtmlDocument(ReaderModeDocument doc, BuildContext context) {
+  final brightness = CupertinoTheme.of(context).brightness ?? Brightness.light;
+  final darkMode = brightness == Brightness.dark;
+
+  final bg = darkMode ? '#0b0b0d' : '#f2f2f7';
+  final surface = darkMode ? '#151518' : '#ffffff';
+  final text = darkMode ? '#f5f5f7' : '#111111';
+  final muted = darkMode ? '#a1a1aa' : '#6b7280';
+  final border = darkMode ? '#2b2b31' : '#e5e7eb';
+  final link = '#0a84ff';
+
+  final title = _htmlEscape(doc.title);
+  final siteName = _htmlEscape(doc.siteName);
+  final sourceUrl = _htmlEscape(doc.sourceUrl);
+  final byline = _htmlEscape(doc.byline ?? '');
+
+  return '''
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      :root { color-scheme: ${darkMode ? 'dark' : 'light'}; }
+      body {
+        margin: 0;
+        background: $bg;
+        color: $text;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+        word-break: break-word;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 14px;
+      }
+      .meta, .content {
+        background: $surface;
+        border: 1px solid $border;
+        border-radius: 14px;
+      }
+      .meta {
+        padding: 16px;
+        margin-bottom: 10px;
+      }
+      .title {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.15;
+      }
+      .sub {
+        margin-top: 8px;
+        color: $muted;
+        font-size: 13px;
+      }
+      .content {
+        padding: 16px;
+        font-size: 18px;
+      }
+      .content p, .content li {
+        font-size: 18px;
+      }
+      .content h1, .content h2, .content h3, .content h4 {
+        line-height: 1.2;
+        margin-top: 1.2em;
+        margin-bottom: 0.5em;
+      }
+      .content img, .content video {
+        max-width: 100%;
+        height: auto;
+        border-radius: 10px;
+      }
+      .content pre, .content code {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .content blockquote {
+        margin: 1em 0;
+        padding: 0.2em 1em;
+        border-left: 4px solid $border;
+        color: $muted;
+      }
+      .content a {
+        color: $link;
+      }
+      .content table {
+        width: 100%;
+        border-collapse: collapse;
+        display: block;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="meta">
+        <h1 class="title">$title</h1>
+        <div class="sub">$siteName${byline.isEmpty ? '' : '  |  $byline'}</div>
+        <div class="sub"><a href="$sourceUrl">$sourceUrl</a></div>
+      </div>
+      <div class="content">
+        ${doc.contentHtml}
+      </div>
+    </div>
+  </body>
+</html>
+''';
+}
+
+void _removeReaderNoise(dom.Document document) {
+  final selectors = [
+    'script',
+    'style',
+    'noscript',
+    'template',
+    'svg',
+    'canvas',
+    'iframe',
+    'form',
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'nav',
+    'footer',
+    'aside',
+    '.advertisement',
+    '.ads',
+    '.ad',
+    '.promo',
+    '.newsletter',
+    '.subscribe',
+    '[aria-hidden="true"]',
+  ];
+  for (final selector in selectors) {
+    for (final node in document.querySelectorAll(selector)) {
+      node.remove();
+    }
+  }
+}
+
+dom.Element? _extractReaderContentNode(dom.Document document) {
+  const preferredSelectors = [
+    'article',
+    'main article',
+    '[itemprop="articleBody"]',
+    '[role="main"] article',
+    'main',
+    '.article-body',
+    '.entry-content',
+    '.post-content',
+    '.article-content',
+    '#article-body',
+    '#content',
+  ];
+
+  for (final selector in preferredSelectors) {
+    final node = document.querySelector(selector);
+    if (node == null) continue;
+    if (_readerTextLength(node) >= 200) {
+      final cloned = node.clone(true);
+      if (cloned is dom.Element) return cloned;
+    }
+  }
+
+  final candidates = document.querySelectorAll('article, main, section, div');
+  dom.Element? best;
+  double bestScore = 0;
+  for (final candidate in candidates) {
+    final score = _readerContentScore(candidate);
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  if (best != null && _readerTextLength(best) >= 120) {
+    final cloned = best.clone(true);
+    if (cloned is dom.Element) return cloned;
+  }
+
+  final body = document.body;
+  if (body == null) return null;
+  if (_readerTextLength(body) < 80) return null;
+  final cloned = body.clone(true);
+  if (cloned is dom.Element) return cloned;
+  return null;
+}
+
+double _readerContentScore(dom.Element element) {
+  final textLen = _readerTextLength(element);
+  if (textLen < 60) return 0;
+  final pCount = element.querySelectorAll('p').length;
+  final imgCount = element.querySelectorAll('img').length;
+  final linkTextLen = element
+      .querySelectorAll('a')
+      .map((link) => _normalizedText(link.text).length)
+      .fold<int>(0, (sum, value) => sum + value);
+  final linkDensity = textLen == 0 ? 0 : linkTextLen / textLen;
+  final classPenalty = (element.className.toLowerCase().contains('comment') ||
+          element.className.toLowerCase().contains('footer') ||
+          element.id.toLowerCase().contains('comment'))
+      ? 200
+      : 0;
+  return textLen + (pCount * 80) + (imgCount * 35) - (linkDensity * 220) - classPenalty;
+}
+
+int _readerTextLength(dom.Element element) => _normalizedText(element.text).length;
+
+String _normalizedText(String value) =>
+    value.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+void _sanitizeReaderContent(dom.Element root, Uri baseUri) {
+  for (final node in root.querySelectorAll(
+    'script,style,noscript,iframe,canvas,svg,form,button,input,select,textarea',
+  )) {
+    node.remove();
+  }
+
+  final allElements = <dom.Element>[root, ...root.querySelectorAll('*')];
+  for (final element in allElements) {
+    if (element.localName == 'img') {
+      final src = _nullIfBlank(
+        element.attributes['src'] ??
+            element.attributes['data-src'] ??
+            element.attributes['data-original'],
+      );
+      if (src == null) {
+        element.remove();
+        continue;
+      }
+      element.attributes['src'] = _resolveUrl(baseUri, src);
+    }
+
+    if (element.localName == 'a') {
+      final href = _nullIfBlank(element.attributes['href']);
+      if (href != null) {
+        element.attributes['href'] = _resolveUrl(baseUri, href);
+      }
+    }
+
+    final attrs = element.attributes.keys.toList();
+    for (final attr in attrs) {
+      final lower = attr.toLowerCase();
+      if (lower.startsWith('on')) {
+        element.attributes.remove(attr);
+        continue;
+      }
+      if (lower == 'style' ||
+          lower == 'class' ||
+          lower == 'id' ||
+          lower == 'srcset' ||
+          lower == 'sizes' ||
+          lower == 'loading' ||
+          lower == 'decoding') {
+        element.attributes.remove(attr);
+      }
+    }
+  }
+}
+
+String _resolveUrl(Uri baseUri, String raw) {
+  final parsed = Uri.tryParse(raw);
+  if (parsed == null) return raw;
+  if (parsed.hasScheme) return parsed.toString();
+  return baseUri.resolveUri(parsed).toString();
+}
+
+String _readerTitle(dom.Document document, {required String fallback}) {
+  final ogTitle = document
+      .querySelector('meta[property="og:title"]')
+      ?.attributes['content'];
+  final title = _nullIfBlank(ogTitle) ??
+      _nullIfBlank(document.querySelector('title')?.text);
+  return title ?? fallback;
+}
+
+String _readerSiteName(dom.Document document, {required String fallback}) {
+  final ogSite = document
+      .querySelector('meta[property="og:site_name"]')
+      ?.attributes['content'];
+  return _nullIfBlank(ogSite) ?? fallback;
+}
+
+String? _readerByline(dom.Document document) {
+  const selectors = [
+    'meta[name="author"]',
+    'meta[property="article:author"]',
+    '[rel="author"]',
+    '.author',
+    '.byline',
+    '[itemprop="author"]',
+  ];
+  for (final selector in selectors) {
+    final node = document.querySelector(selector);
+    if (node == null) continue;
+    final content = _nullIfBlank(node.attributes['content']) ?? _nullIfBlank(node.text);
+    if (content != null) return _normalizedText(content);
+  }
+  return null;
+}
+
+String _htmlEscape(String value) => htmlEscape.convert(value);
 
 String _plainTextPreview(String value, int maxChars) {
   final text = _plainText(value).replaceAll(RegExp(r'\s+'), ' ').trim();
