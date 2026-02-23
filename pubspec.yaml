@@ -13,6 +13,7 @@ dependencies:
   file_picker: ^8.1.2
   html: ^0.15.5
   http: ^1.2.2
+  share_plus: ^7.2.2
   shared_preferences: ^2.3.2
   webfeed_plus: ^1.1.2
   webview_flutter: ^4.9.0

@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webfeed_plus/webfeed_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -98,6 +99,10 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Library',
           ),
           BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.bookmark),
+            label: 'Saved',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(CupertinoIcons.settings),
             label: 'Settings',
           ),
@@ -118,6 +123,11 @@ class _HomeShellState extends State<HomeShell> {
                 _tabController.index = 0;
               },
             ),
+          );
+        }
+        if (index == 2) {
+          return CupertinoTabView(
+            builder: (_) => BookmarksScreen(controller: controller),
           );
         }
         return CupertinoTabView(

@@ -14,7 +14,7 @@ class FeedRepository {
       throw Exception('HTTP ${response.statusCode} while loading feed.');
     }
 
-    final body = response.body;
+    final body = _decodeHttpResponseBody(response);
 
     try {
       return _parseRss(body);
@@ -160,12 +160,14 @@ class AppController extends ChangeNotifier {
   static const _keySavedFeeds = 'library.savedFeeds';
   static const _keyArticleHistory = 'library.articleHistory';
   static const _keyReadArticleKeys = 'library.readArticleKeys';
+  static const _keyBookmarkedArticles = 'library.bookmarkedArticles';
 
   final SharedPreferences _prefs;
 
   bool _isDarkMode = false;
   List<String> _savedFeeds = <String>[];
   List<ArticleHistoryEntry> _articleHistory = <ArticleHistoryEntry>[];
+  List<BookmarkedArticleEntry> _bookmarkedArticles = <BookmarkedArticleEntry>[];
   Set<String> _readArticleKeys = <String>{};
   String _activeFeedUrl = '';
   int _feedSelectionTick = 0;
@@ -180,6 +182,8 @@ class AppController extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   List<String> get savedFeeds => List.unmodifiable(_savedFeeds);
   List<ArticleHistoryEntry> get articleHistory => List.unmodifiable(_articleHistory);
+  List<BookmarkedArticleEntry> get bookmarkedArticles =>
+      List.unmodifiable(_bookmarkedArticles);
   int get readArticleCount => _readArticleKeys.length;
   String get activeFeedUrl => _activeFeedUrl;
   int get feedSelectionTick => _feedSelectionTick;
@@ -208,6 +212,28 @@ class AppController extends ChangeNotifier {
           return null;
         })
         .whereType<ArticleHistoryEntry>()
+        .toList();
+
+    final encodedBookmarks =
+        _prefs.getStringList(_keyBookmarkedArticles) ?? const <String>[];
+    _bookmarkedArticles = encodedBookmarks
+        .map((value) {
+          try {
+            final decoded = jsonDecode(value);
+            if (decoded is Map<String, dynamic>) {
+              return BookmarkedArticleEntry.fromJson(decoded);
+            }
+            if (decoded is Map) {
+              return BookmarkedArticleEntry.fromJson(
+                decoded.cast<String, dynamic>(),
+              );
+            }
+          } catch (_) {
+            return null;
+          }
+          return null;
+        })
+        .whereType<BookmarkedArticleEntry>()
         .toList();
 
     final readKeys = _prefs.getStringList(_keyReadArticleKeys) ?? const <String>[];
@@ -343,6 +369,52 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool isArticleBookmarked(FeedArticle article) {
+    final key = _articleBookmarkKey(article);
+    return _bookmarkedArticles.any((entry) => entry.bookmarkKey == key);
+  }
+
+  void toggleArticleBookmark(FeedArticle article) {
+    final key = _articleBookmarkKey(article);
+    final existingIndex =
+        _bookmarkedArticles.indexWhere((entry) => entry.bookmarkKey == key);
+    if (existingIndex >= 0) {
+      _bookmarkedArticles = [
+        for (var i = 0; i < _bookmarkedArticles.length; i++)
+          if (i != existingIndex) _bookmarkedArticles[i],
+      ];
+    } else {
+      final entry = BookmarkedArticleEntry.fromFeedArticle(article);
+      _bookmarkedArticles = [
+        entry,
+        for (final existing in _bookmarkedArticles)
+          if (existing.bookmarkKey != entry.bookmarkKey) existing,
+      ];
+      if (_bookmarkedArticles.length > 200) {
+        _bookmarkedArticles = _bookmarkedArticles.take(200).toList();
+      }
+    }
+    _persistBookmarkedArticles();
+    notifyListeners();
+  }
+
+  void removeBookmarkedArticle(String bookmarkKey) {
+    final next = _bookmarkedArticles
+        .where((entry) => entry.bookmarkKey != bookmarkKey)
+        .toList();
+    if (next.length == _bookmarkedArticles.length) return;
+    _bookmarkedArticles = next;
+    _persistBookmarkedArticles();
+    notifyListeners();
+  }
+
+  void clearBookmarkedArticles() {
+    if (_bookmarkedArticles.isEmpty) return;
+    _bookmarkedArticles = <BookmarkedArticleEntry>[];
+    _persistBookmarkedArticles();
+    notifyListeners();
+  }
+
   bool isArticleRead(String articleKey) => _readArticleKeys.contains(articleKey);
 
   void markArticleRead(String articleKey) {
@@ -380,6 +452,13 @@ class AppController extends ChangeNotifier {
 
   void _persistReadArticleKeys() {
     _prefs.setStringList(_keyReadArticleKeys, _readArticleKeys.toList());
+  }
+
+  void _persistBookmarkedArticles() {
+    final encoded = _bookmarkedArticles
+        .map((entry) => jsonEncode(entry.toJson()))
+        .toList();
+    _prefs.setStringList(_keyBookmarkedArticles, encoded);
   }
 }
 
@@ -536,3 +615,89 @@ class ArticleHistoryEntry {
   }
 }
 
+class BookmarkedArticleEntry {
+  const BookmarkedArticleEntry({
+    required this.bookmarkKey,
+    required this.title,
+    required this.link,
+    required this.summary,
+    required this.publishedLabel,
+    required this.feedTitle,
+    required this.sourceUrl,
+    required this.savedAt,
+  });
+
+  final String bookmarkKey;
+  final String title;
+  final String? link;
+  final String summary;
+  final String? publishedLabel;
+  final String? feedTitle;
+  final String? sourceUrl;
+  final DateTime savedAt;
+
+  factory BookmarkedArticleEntry.fromFeedArticle(FeedArticle article) {
+    return BookmarkedArticleEntry(
+      bookmarkKey: _articleBookmarkKey(article),
+      title: article.title,
+      link: article.link,
+      summary: article.summary,
+      publishedLabel: article.publishedLabel,
+      feedTitle: article.sourceTitle,
+      sourceUrl: article.sourceUrl,
+      savedAt: DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'bookmarkKey': bookmarkKey,
+      'title': title,
+      'link': link,
+      'summary': summary,
+      'publishedLabel': publishedLabel,
+      'feedTitle': feedTitle,
+      'sourceUrl': sourceUrl,
+      'savedAt': savedAt.toIso8601String(),
+    };
+  }
+
+  static BookmarkedArticleEntry fromJson(Map<String, dynamic> json) {
+    DateTime parsed;
+    try {
+      parsed = DateTime.parse((json['savedAt'] ?? '').toString());
+    } catch (_) {
+      parsed = DateTime.now();
+    }
+    final article = FeedArticle(
+      title: _nonEmpty(json['title']?.toString(), fallback: 'Untitled article'),
+      summary: (json['summary'] ?? '').toString(),
+      link: _nullIfBlank(json['link']?.toString()),
+      publishedLabel: _nullIfBlank(json['publishedLabel']?.toString()),
+      sourceTitle: _nullIfBlank(json['feedTitle']?.toString()),
+      sourceUrl: _nullIfBlank(json['sourceUrl']?.toString()),
+    );
+    return BookmarkedArticleEntry(
+      bookmarkKey: _nullIfBlank(json['bookmarkKey']?.toString()) ??
+          _articleBookmarkKey(article),
+      title: article.title,
+      link: article.link,
+      summary: article.summary,
+      publishedLabel: article.publishedLabel,
+      feedTitle: article.sourceTitle,
+      sourceUrl: article.sourceUrl,
+      savedAt: parsed,
+    );
+  }
+
+  FeedArticle toFeedArticle() {
+    return FeedArticle(
+      title: title,
+      summary: summary,
+      link: link,
+      publishedLabel: publishedLabel,
+      sourceTitle: feedTitle,
+      sourceUrl: sourceUrl,
+    );
+  }
+}

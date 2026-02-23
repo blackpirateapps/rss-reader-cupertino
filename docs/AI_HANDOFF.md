@@ -6,6 +6,7 @@ This repository contains a Flutter Android RSS reader with a Cupertino-style UI 
 
 Current major features:
 - RSS + Atom feed parsing
+- UTF-8-first HTTP response decoding to reduce mojibake text rendering (`â€™`-style issues)
 - Unread article timeline aggregated across saved feeds
 - Feed filters for All / Unread / Read in the Feed tab (Unread default)
 - Source-feed filter pills in the Feed tab (multi-select; can scope to one or more feeds)
@@ -13,7 +14,7 @@ Current major features:
 - Native Cupertino article detail preview (single scroll, no embedded reader WebView)
 - In-app article web view (`webview_flutter`) for source pages
 - Reader mode article fetch/parse view for source pages (Instapaper-style simplified reading)
-- Saved feeds, read marks, and recent article history (local persistence via `shared_preferences`)
+- Saved feeds, read marks, recent article history, and bookmarked articles (local persistence via `shared_preferences`)
 - Feed URL backup import/export (plain text file, one URL per line)
 - Settings page with dark mode toggle
 - GitHub Actions workflow that builds a release APK artifact
@@ -63,6 +64,7 @@ High-level structure:
 - `HomeShell` uses `CupertinoTabScaffold` with tabs:
   - Feed
   - Library
+  - Saved (bookmarks)
   - Settings
 
 ### State / Persistence (`AppController`)
@@ -71,6 +73,7 @@ High-level structure:
 - Dark mode setting (`settings.darkMode`)
 - Saved feeds list (`library.savedFeeds`)
 - Recent article history (`library.articleHistory`)
+- Bookmarked articles (`library.bookmarkedArticles`)
 - Read article keys (`library.readArticleKeys`)
 - Active feed URL and a `feedSelectionTick` counter to notify Feed tab when selection changes
 
@@ -131,20 +134,28 @@ Recent Articles section:
 - Tapping an entry opens the article detail screen
 - `Clear` action removes history
 
+Saved / Bookmarked page:
+- Dedicated **Saved** tab shows bookmarked articles
+- Tapping an article opens the article detail screen
+- Individual remove + clear-all supported
+
 Storage / settings behavior:
 - Settings page can clear:
   - Saved feeds
   - Recent article history
+  - Bookmarked articles
   - Read article marks
 
 Article reader:
 - `ArticleScreen` now uses a native Cupertino scroll view with a single title/header and native text preview of feed content
+- Bottom action bar contains `Read Full Story`, `Reader Mode`, `Copy`, `Share`, and `Save/Saved`
 - “Read Full Story” opens the source URL page in the dedicated browser WebView screen
 - “Reader Mode” fetches the source page HTML, extracts a readable article body, and renders a simplified styled reading view
-- Copy link is an icon-only action in the article header card
+- Reader Mode supports font switching (System / Serif / Humanist / Mono)
 
 Reader mode implementation notes:
 - Uses `http` + `package:html` (DOM parsing), not a remote API/service
+- HTML fetch uses the shared UTF-8-first response decoder helper
 - Heuristics prefer `article`/`main`/common content selectors, then score candidate containers by text density and paragraph count
 - Sanitizes content (removes scripts/forms/ads-like blocks, strips event/style attrs, resolves relative URLs)
 - Reader links are intercepted and opened in the in-app browser WebView screen
@@ -190,7 +201,7 @@ If ordering quality becomes an issue, add a proper RFC822 parser (e.g. `intl` `D
 - `&lsquo;`
 - `&#8217;`
 
-Separate from `_plainText()`, article detail rendering uses `_buildArticleHtmlDocument(...)` to wrap feed HTML in a minimal style sheet for readable dark/light rendering and responsive images.
+Separate from `_plainText()`, Reader Mode rendering uses `_buildReaderModeHtmlDocument(...)` to wrap extracted website content in a styled reading layout.
 
 ## CI / Analyzer Compatibility Gotchas (Already Addressed)
 

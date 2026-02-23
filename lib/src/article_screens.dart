@@ -1,5 +1,25 @@
 part of rss_reader_cupertino_app;
 
+enum ReaderModeFontFamily {
+  system,
+  serif,
+  humanist,
+  mono,
+}
+
+String _fontFamilyLabel(ReaderModeFontFamily fontFamily) {
+  switch (fontFamily) {
+    case ReaderModeFontFamily.system:
+      return 'System';
+    case ReaderModeFontFamily.serif:
+      return 'Serif';
+    case ReaderModeFontFamily.humanist:
+      return 'Humanist';
+    case ReaderModeFontFamily.mono:
+      return 'Mono';
+  }
+}
+
 class ArticleScreen extends StatelessWidget {
   const ArticleScreen({super.key, required this.article});
 
@@ -7,6 +27,7 @@ class ArticleScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
     final metadataLabel = [
       if (article.sourceTitle != null && article.sourceTitle!.trim().isNotEmpty)
         article.sourceTitle!.trim(),
@@ -15,6 +36,7 @@ class ArticleScreen extends StatelessWidget {
     ].join('  |  ');
     final hasLink = article.link != null && article.link!.trim().isNotEmpty;
     final bodyText = _articleBodyText(article.summary);
+    final isBookmarked = controller.isArticleBookmarked(article);
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
@@ -25,174 +47,294 @@ class ArticleScreen extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _cardColor(context),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _borderColor(context)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          article.title,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: _labelColor(context),
-                            height: 1.2,
-                          ),
+        child: Column(
+          children: [
+            Expanded(
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _cardColor(context),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _borderColor(context)),
                         ),
-                        if (metadataLabel.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            metadataLabel,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _secondaryLabelColor(context),
-                            ),
-                          ),
-                        ],
-                        if (hasLink) ...[
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              CupertinoButton(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                color: CupertinoColors.activeBlue,
-                                borderRadius: BorderRadius.circular(12),
-                                onPressed: () {
-                                  final uri = Uri.tryParse(article.link!);
-                                  if (uri == null) return;
-                                  Navigator.of(context).push(
-                                    CupertinoPageRoute<void>(
-                                      builder: (_) => ArticleWebViewScreen(
-                                        title: article.title,
-                                        uri: uri,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: const Text(
-                                  'Read Full Story',
-                                  style: TextStyle(color: CupertinoColors.white),
-                                ),
-                              ),
-                              CupertinoButton(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                color: _secondaryButtonColor(context),
-                                borderRadius: BorderRadius.circular(12),
-                                onPressed: () {
-                                  final uri = Uri.tryParse(article.link!);
-                                  if (uri == null) return;
-                                  Navigator.of(context).push(
-                                    CupertinoPageRoute<void>(
-                                      builder: (_) => ArticleReaderModeScreen(
-                                        title: article.title,
-                                        uri: uri,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  'Reader Mode',
-                                  style: TextStyle(color: _labelColor(context)),
-                                ),
-                              ),
-                              CupertinoButton(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size.square(40),
-                                color: _secondaryButtonColor(context),
-                                borderRadius: BorderRadius.circular(12),
-                                onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: article.link!));
-                                  _showSimpleDialog(
-                                    context,
-                                    title: 'Copied',
-                                    message: 'Article link copied to clipboard.',
-                                  );
-                                },
-                                child: Icon(
-                                  CupertinoIcons.doc_on_doc,
-                                  size: 18,
+                              Text(
+                                article.title,
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w700,
                                   color: _labelColor(context),
+                                  height: 1.2,
                                 ),
                               ),
+                              if (metadataLabel.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  metadataLabel,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _secondaryLabelColor(context),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
-                        ],
-                      ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _cardColor(context),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _borderColor(context)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Preview',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: _secondaryLabelColor(context),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _cardColor(context),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _borderColor(context)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Preview',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _secondaryLabelColor(context),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              if (bodyText.isEmpty)
+                                Text(
+                                  'No article content was provided by this feed entry.',
+                                  style: TextStyle(
+                                    color: _secondaryLabelColor(context),
+                                    fontSize: 14,
+                                  ),
+                                )
+                              else
+                                Text(
+                                  bodyText,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: _labelColor(context),
+                                    height: 1.4,
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        if (bodyText.isEmpty)
-                          Text(
-                            'No article content was provided by this feed entry.',
-                            style: TextStyle(
-                              color: _secondaryLabelColor(context),
-                              fontSize: 14,
-                            ),
-                          )
-                        else
-                          Text(
-                            bodyText,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: _labelColor(context),
-                              height: 1.4,
-                            ),
-                          ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
+            _ArticleActionBar(
+              article: article,
+              hasLink: hasLink,
+              isBookmarked: isBookmarked,
+            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ArticleActionBar extends StatelessWidget {
+  const _ArticleActionBar({
+    required this.article,
+    required this.hasLink,
+    required this.isBookmarked,
+  });
+
+  final FeedArticle article;
+  final bool hasLink;
+  final bool isBookmarked;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
+    final link = article.link;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _cardColor(context),
+        border: Border(top: BorderSide(color: _borderColor(context))),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Row(
+            children: [
+              if (hasLink) ...[
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  color: CupertinoColors.activeBlue,
+                  borderRadius: BorderRadius.circular(12),
+                  onPressed: () {
+                    final uri = Uri.tryParse(link!);
+                    if (uri == null) return;
+                    Navigator.of(context).push(
+                      CupertinoPageRoute<void>(
+                        builder: (_) => ArticleWebViewScreen(
+                          title: article.title,
+                          uri: uri,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text(
+                    'Read Full Story',
+                    style: TextStyle(color: CupertinoColors.white),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  color: _secondaryButtonColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  onPressed: () {
+                    final uri = Uri.tryParse(link!);
+                    if (uri == null) return;
+                    Navigator.of(context).push(
+                      CupertinoPageRoute<void>(
+                        builder: (_) => ArticleReaderModeScreen(
+                          title: article.title,
+                          uri: uri,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    'Reader Mode',
+                    style: TextStyle(color: _labelColor(context)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                color: _secondaryButtonColor(context),
+                borderRadius: BorderRadius.circular(12),
+                onPressed: link == null
+                    ? null
+                    : () {
+                        Clipboard.setData(ClipboardData(text: link));
+                        _showSimpleDialog(
+                          context,
+                          title: 'Copied',
+                          message: 'Article link copied to clipboard.',
+                        );
+                      },
+                child: Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.doc_on_doc,
+                      size: 16,
+                      color: _labelColor(context),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Copy',
+                      style: TextStyle(color: _labelColor(context)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                color: _secondaryButtonColor(context),
+                borderRadius: BorderRadius.circular(12),
+                onPressed: link == null
+                    ? null
+                    : () {
+                        Share.share(
+                          link,
+                          subject: article.title,
+                        );
+                      },
+                child: Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.share,
+                      size: 16,
+                      color: _labelColor(context),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Share',
+                      style: TextStyle(color: _labelColor(context)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                color: isBookmarked
+                    ? CupertinoColors.activeOrange
+                    : _secondaryButtonColor(context),
+                borderRadius: BorderRadius.circular(12),
+                onPressed: () {
+                  controller.toggleArticleBookmark(article);
+                },
+                child: Row(
+                  children: [
+                    Icon(
+                      isBookmarked
+                          ? CupertinoIcons.bookmark_fill
+                          : CupertinoIcons.bookmark,
+                      size: 16,
+                      color:
+                          isBookmarked ? CupertinoColors.white : _labelColor(context),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isBookmarked ? 'Saved' : 'Save',
+                      style: TextStyle(
+                        color: isBookmarked
+                            ? CupertinoColors.white
+                            : _labelColor(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -416,6 +558,7 @@ class _ArticleReaderModeScreenState extends State<ArticleReaderModeScreen> {
   bool _isLoading = true;
   String? _error;
   ReaderModeDocument? _readerDocument;
+  ReaderModeFontFamily _fontFamily = ReaderModeFontFamily.system;
 
   @override
   void initState() {
@@ -461,7 +604,11 @@ class _ArticleReaderModeScreenState extends State<ArticleReaderModeScreen> {
           ),
         );
       await controller.loadHtmlString(
-        _buildReaderModeHtmlDocument(doc, context),
+        _buildReaderModeHtmlDocument(
+          doc,
+          context,
+          fontFamily: _fontFamily,
+        ),
       );
       if (!mounted) return;
       setState(() {
@@ -564,9 +711,103 @@ class _ArticleReaderModeScreenState extends State<ArticleReaderModeScreen> {
                 ],
               ),
             ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _cardColor(context),
+                border: Border(top: BorderSide(color: _borderColor(context))),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Row(
+                    children: [
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        color: _secondaryButtonColor(context),
+                        borderRadius: BorderRadius.circular(10),
+                        onPressed: () => _showFontPicker(context),
+                        child: Text(
+                          'Font: ${_fontFamilyLabel(_fontFamily)}',
+                          style: TextStyle(color: _labelColor(context)),
+                        ),
+                      ),
+                      const Spacer(),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        color: _secondaryButtonColor(context),
+                        borderRadius: BorderRadius.circular(10),
+                        onPressed: () {
+                          Share.share(widget.uri.toString(), subject: widget.title);
+                        },
+                        child: Row(
+                          children: [
+                            Icon(
+                              CupertinoIcons.share,
+                              size: 16,
+                              color: _labelColor(context),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Share',
+                              style: TextStyle(color: _labelColor(context)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showFontPicker(BuildContext context) {
+    showCupertinoModalPopup<void>(
+      context: context,
+      builder: (dialogContext) {
+        return CupertinoActionSheet(
+          title: const Text('Reader Font'),
+          actions: [
+            for (final option in ReaderModeFontFamily.values)
+              CupertinoActionSheetAction(
+                isDefaultAction: option == _fontFamily,
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop();
+                  if (option == _fontFamily) return;
+                  setState(() {
+                    _fontFamily = option;
+                  });
+                  final controller = _webViewController;
+                  final doc = _readerDocument;
+                  if (controller == null || doc == null) return;
+                  await controller.loadHtmlString(
+                    _buildReaderModeHtmlDocument(
+                      doc,
+                      context,
+                      fontFamily: _fontFamily,
+                    ),
+                  );
+                },
+                child: Text(_fontFamilyLabel(option)),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        );
+      },
     );
   }
 }
@@ -601,7 +842,7 @@ class ReaderModeRepository {
       throw Exception('HTTP ${response.statusCode} while loading article.');
     }
 
-    final document = html_parser.parse(response.body);
+    final document = html_parser.parse(_decodeHttpResponseBody(response));
     _removeReaderNoise(document);
 
     final contentNode = _extractReaderContentNode(document);
@@ -629,4 +870,3 @@ class ReaderModeRepository {
     );
   }
 }
-

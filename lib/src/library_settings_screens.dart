@@ -367,6 +367,22 @@ class SettingsScreen extends StatelessWidget {
                         isLast: false,
                       ),
                       _LibraryRow(
+                        title: 'Bookmarked Articles',
+                        subtitle:
+                            '${controller.bookmarkedArticles.length} saved locally',
+                        onTap: controller.bookmarkedArticles.isEmpty
+                            ? null
+                            : controller.clearBookmarkedArticles,
+                        trailing: controller.bookmarkedArticles.isEmpty
+                            ? null
+                            : const Icon(
+                                CupertinoIcons.delete,
+                                color: CupertinoColors.systemRed,
+                                size: 18,
+                              ),
+                        isLast: false,
+                      ),
+                      _LibraryRow(
                         title: 'Read Article Marks',
                         subtitle: '${controller.readArticleCount} hidden as read',
                         onTap: controller.readArticleCount == 0
@@ -401,7 +417,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                       _StaticInfoRow(
                         label: 'Article View',
-                        value: 'Native preview + WebView',
+                        value: 'Preview + Reader + WebView',
                         isLast: true,
                       ),
                     ],
@@ -416,3 +432,188 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+class BookmarksScreen extends StatelessWidget {
+  const BookmarksScreen({super.key, required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final bookmarks = controller.bookmarkedArticles;
+        return CupertinoPageScaffold(
+          navigationBar: CupertinoNavigationBar(
+            middle: const Text('Saved'),
+            trailing: bookmarks.isEmpty
+                ? null
+                : CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size.square(28),
+                    onPressed: () => _confirm(
+                      context,
+                      title: 'Clear Saved Articles',
+                      message: 'Remove all bookmarked articles?',
+                      confirmLabel: 'Clear',
+                      onConfirm: controller.clearBookmarkedArticles,
+                    ),
+                    child: const Text('Clear'),
+                  ),
+          ),
+          child: SafeArea(
+            child: bookmarks.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'Saved articles will appear here after tapping Save in an article.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _secondaryLabelColor(context),
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    itemCount: bookmarks.length,
+                    itemBuilder: (context, index) {
+                      final entry = bookmarks[index];
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index == bookmarks.length - 1 ? 0 : 8,
+                        ),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _cardColor(context),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _borderColor(context)),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      final article = entry.toFeedArticle();
+                                      controller.markArticleRead(
+                                        _articleReadKey(article),
+                                      );
+                                      controller.recordArticle(
+                                        ArticleHistoryEntry(
+                                          title: article.title,
+                                          link: article.link,
+                                          summary: article.summary,
+                                          publishedLabel: article.publishedLabel,
+                                          feedTitle: article.sourceTitle,
+                                          openedAt: DateTime.now(),
+                                        ),
+                                      );
+                                      Navigator.of(context).push(
+                                        CupertinoPageRoute<void>(
+                                          builder: (_) => ArticleScreen(article: article),
+                                        ),
+                                      );
+                                    },
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          entry.title,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          [
+                                            if ((entry.feedTitle ?? '').trim().isNotEmpty)
+                                              entry.feedTitle!.trim(),
+                                            'Saved ${_formatDateTime(entry.savedAt)}',
+                                          ].join('  |  '),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: _secondaryLabelColor(context),
+                                          ),
+                                        ),
+                                        if (entry.summary.trim().isNotEmpty) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _plainTextPreview(entry.summary, 180),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: _labelColor(context),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                CupertinoButton(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size.square(28),
+                                  onPressed: () => controller.removeBookmarkedArticle(
+                                    entry.bookmarkKey,
+                                  ),
+                                  child: const Icon(
+                                    CupertinoIcons.bookmark_slash,
+                                    color: CupertinoColors.systemRed,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirm(
+    BuildContext context, {
+    required String title,
+    required String message,
+    required String confirmLabel,
+    required VoidCallback onConfirm,
+  }) {
+    showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              onConfirm();
+            },
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
+}

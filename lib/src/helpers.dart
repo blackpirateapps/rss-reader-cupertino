@@ -81,6 +81,14 @@ String _articleReadKey(FeedArticle article) {
   return 'fallback:$source|${article.title}|$published';
 }
 
+String _articleBookmarkKey(FeedArticle article) {
+  final link = _nullIfBlank(article.link);
+  if (link != null) return 'link:$link';
+
+  final source = _nullIfBlank(article.sourceUrl) ?? _nullIfBlank(article.sourceTitle) ?? '';
+  return 'fallback:$source|${article.title}';
+}
+
 int _compareArticleRecency(FeedArticle a, FeedArticle b) {
   final aDate = _tryParseArticleDate(a.publishedLabel);
   final bDate = _tryParseArticleDate(b.publishedLabel);
@@ -132,7 +140,34 @@ String _articleBodyText(String value) {
       .trim();
 }
 
-String _buildReaderModeHtmlDocument(ReaderModeDocument doc, BuildContext context) {
+String _decodeHttpResponseBody(http.Response response) {
+  final bytes = response.bodyBytes;
+  if (bytes.isEmpty) return '';
+
+  final contentType = (response.headers['content-type'] ?? '').toLowerCase();
+  final charsetMatch = RegExp(r'charset=([^;]+)').firstMatch(contentType);
+  final charset = charsetMatch?.group(1)?.trim().replaceAll('"', '');
+  final encoding = charset == null ? null : Encoding.getByName(charset);
+  if (encoding != null) {
+    try {
+      return encoding.decode(bytes);
+    } catch (_) {
+      // Fall back below.
+    }
+  }
+
+  try {
+    return utf8.decode(bytes);
+  } catch (_) {
+    return latin1.decode(bytes);
+  }
+}
+
+String _buildReaderModeHtmlDocument(
+  ReaderModeDocument doc,
+  BuildContext context, {
+  ReaderModeFontFamily fontFamily = ReaderModeFontFamily.system,
+}) {
   final brightness = CupertinoTheme.of(context).brightness ?? Brightness.light;
   final darkMode = brightness == Brightness.dark;
 
@@ -147,6 +182,7 @@ String _buildReaderModeHtmlDocument(ReaderModeDocument doc, BuildContext context
   final siteName = _htmlEscape(doc.siteName);
   final sourceUrl = _htmlEscape(doc.sourceUrl);
   final byline = _htmlEscape(doc.byline ?? '');
+  final readerFontCss = _readerModeFontCss(fontFamily);
 
   return '''
 <!doctype html>
@@ -159,7 +195,7 @@ String _buildReaderModeHtmlDocument(ReaderModeDocument doc, BuildContext context
         margin: 0;
         background: $bg;
         color: $text;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: $readerFontCss;
         line-height: 1.55;
         word-break: break-word;
       }
@@ -239,6 +275,19 @@ String _buildReaderModeHtmlDocument(ReaderModeDocument doc, BuildContext context
   </body>
 </html>
 ''';
+}
+
+String _readerModeFontCss(ReaderModeFontFamily fontFamily) {
+  switch (fontFamily) {
+    case ReaderModeFontFamily.system:
+      return '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    case ReaderModeFontFamily.serif:
+      return 'Georgia, "Times New Roman", serif';
+    case ReaderModeFontFamily.humanist:
+      return '"Gill Sans", "Trebuchet MS", sans-serif';
+    case ReaderModeFontFamily.mono:
+      return '"SFMono-Regular", Menlo, Consolas, monospace';
+  }
 }
 
 void _removeReaderNoise(dom.Document document) {
