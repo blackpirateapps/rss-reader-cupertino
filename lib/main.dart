@@ -259,7 +259,7 @@ class _FeedScreenState extends State<FeedScreen> {
         middle: const Text('RSS Reader'),
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          minimumSize: 28,
+          minimumSize: const Size.square(28),
           onPressed: _isLoading
               ? null
               : () {
@@ -272,7 +272,7 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          minimumSize: 28,
+          minimumSize: const Size.square(28),
           onPressed: _isLoading ? null : _loadFeed,
           child: _isLoading
               ? const CupertinoActivityIndicator(radius: 8)
@@ -529,7 +529,7 @@ class LibraryScreen extends StatelessWidget {
                                 onTap: () => onOpenFeed(controller.savedFeeds[i]),
                                 trailing: CupertinoButton(
                                   padding: EdgeInsets.zero,
-                                  minimumSize: 28,
+                                  minimumSize: const Size.square(28),
                                   onPressed: () =>
                                       controller.removeSavedFeed(controller.savedFeeds[i]),
                                   child: const Icon(
@@ -939,7 +939,7 @@ class _ArticleWebViewScreenState extends State<ArticleWebViewScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          minimumSize: 28,
+          minimumSize: const Size.square(28),
           onPressed: () {
             _webViewController.reload();
           },
@@ -1647,7 +1647,7 @@ class _SectionCard extends StatelessWidget {
                 if (actionLabel != null)
                   CupertinoButton(
                     padding: EdgeInsets.zero,
-                    minimumSize: 28,
+                    minimumSize: const Size.square(28),
                     onPressed: onAction,
                     child: Text(actionLabel!),
                   ),
