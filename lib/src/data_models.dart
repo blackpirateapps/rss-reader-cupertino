@@ -1,4 +1,4 @@
-part of rss_reader_cupertino_app;
+part of ../main.dart;
 
 class FeedRepository {
   static Future<FeedLoadResult> fetch(Uri uri) async {

@@ -1,4 +1,3 @@
-library rss_reader_cupertino_app;
 
 import 'dart:convert';
 import 'dart:io';

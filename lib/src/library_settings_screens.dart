@@ -1,4 +1,4 @@
-part of rss_reader_cupertino_app;
+part of ../main.dart;
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({
@@ -569,7 +569,7 @@ class BookmarksScreen extends StatelessWidget {
                                     entry.bookmarkKey,
                                   ),
                                   child: const Icon(
-                                    CupertinoIcons.bookmark_slash,
+                                    CupertinoIcons.delete_solid,
                                     color: CupertinoColors.systemRed,
                                     size: 18,
                                   ),
