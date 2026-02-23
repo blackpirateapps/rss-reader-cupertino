@@ -877,7 +877,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final brightness = CupertinoTheme.of(context).brightness;
+    final brightness = CupertinoTheme.of(context).brightness ?? Brightness.light;
     if (_webViewReady && _loadedBrightness == brightness) return;
     _loadedBrightness = brightness;
     _prepareContentWebView(brightness);
@@ -2221,7 +2221,7 @@ String _articleReadKey(FeedArticle article) {
 
   final source = _nullIfBlank(article.sourceUrl) ?? _nullIfBlank(article.sourceTitle) ?? '';
   final published = _nullIfBlank(article.publishedLabel) ?? '';
-  return 'fallback:${source}|${article.title}|$published';
+  return 'fallback:$source|${article.title}|$published';
 }
 
 int _compareArticleRecency(FeedArticle a, FeedArticle b) {
