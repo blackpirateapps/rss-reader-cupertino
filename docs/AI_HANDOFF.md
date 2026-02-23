@@ -46,7 +46,16 @@ What it does:
 
 ## App Architecture Overview
 
-Main file: `lib/main.dart`
+Entry file: `lib/main.dart`
+
+The app was refactored from a single large file into a `part`-based layout (same library namespace, smaller files):
+- `lib/main.dart` (entrypoint + app shell + imports + `part` declarations)
+- `lib/src/feed_screen.dart`
+- `lib/src/library_settings_screens.dart`
+- `lib/src/article_screens.dart`
+- `lib/src/data_models.dart`
+- `lib/src/ui_components.dart`
+- `lib/src/helpers.dart`
 
 High-level structure:
 - `main()` initializes `SharedPreferences` via `AppController.create()`
@@ -197,18 +206,15 @@ Several fixes were required due to Flutter stable version differences and analyz
 
 ## Files Most Likely to Be Edited Next
 
-- `lib/main.dart` (currently contains all app logic/UI)
+- `lib/main.dart` (entrypoint/app shell and imports)
+- `lib/src/feed_screen.dart`
+- `lib/src/article_screens.dart`
+- `lib/src/data_models.dart`
+- `lib/src/helpers.dart`
 - `.github/workflows/build-apk.yml` (CI behavior)
 - `pubspec.yaml` (dependencies)
 - `docs/AI_HANDOFF.md` (keep in sync after feature changes)
 
-## Suggested Future Refactor (Optional)
+## Refactor Follow-up (Optional)
 
-As features grow, split `lib/main.dart` into:
-- `app/` (app shell, theme, state)
-- `features/feed/`
-- `features/library/`
-- `features/settings/`
-- `data/` (repository + models)
-
-This would reduce merge conflicts and make future AI edits safer.
+Current split uses Dart `part` files for lower-risk modularization. A future step could move to standalone libraries/files (non-`part`) per feature for stronger boundaries and testability.
