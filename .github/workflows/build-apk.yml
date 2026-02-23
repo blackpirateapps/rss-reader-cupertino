@@ -36,6 +36,13 @@ jobs:
             flutter create --platforms=android --org com.example.rssreadercupertino .
           fi
 
+      - name: Ensure Android INTERNET permission
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
+            sed -i '/<application/i\    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+          fi
+
       - name: Install dependencies
         run: flutter pub get
 

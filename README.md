@@ -4,10 +4,12 @@ A lightweight RSS reader built with Flutter using **Cupertino widgets** (no Mate
 
 ## Features
 
-- Cupertino-style interface on Android
-- Paste any RSS feed URL and load articles
+- Cupertino-style interface on Android (no Material UI in app screens)
+- RSS and Atom feed support
+- In-app article web view
+- Saved feeds and recent article history (local persistence)
+- Settings page with dark mode toggle
 - Pull to refresh
-- Article detail view with link copy action
 
 ## Local development (when Flutter is available)
 
