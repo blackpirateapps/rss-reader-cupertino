@@ -134,15 +134,12 @@ class _FeedScreenState extends State<FeedScreen> {
   FeedLoadResult? _feed;
   DateTime? _lastLoadedAt;
   int _seenFeedSelectionTick = 0;
-  String _currentFeedUrl = _defaultFeed;
   String _searchQuery = '';
+  int _loadedFeedCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _currentFeedUrl = widget.controller.activeFeedUrl.isEmpty
-        ? _defaultFeed
-        : widget.controller.activeFeedUrl;
     _seenFeedSelectionTick = widget.controller.feedSelectionTick;
     widget.controller.addListener(_handleControllerChange);
     _loadFeed();
@@ -170,52 +167,73 @@ class _FeedScreenState extends State<FeedScreen> {
     final hasFeedSelectionChange =
         _seenFeedSelectionTick != widget.controller.feedSelectionTick;
 
-    if (!hasFeedSelectionChange) {
+    if (hasFeedSelectionChange) {
+      _seenFeedSelectionTick = widget.controller.feedSelectionTick;
+      _loadFeed();
+    } else {
       setState(() {});
-      return;
     }
-
-    _seenFeedSelectionTick = widget.controller.feedSelectionTick;
-    final nextUrl = widget.controller.activeFeedUrl;
-    if (nextUrl.isEmpty) {
-      setState(() {});
-      return;
-    }
-
-    _currentFeedUrl = nextUrl;
-    _loadFeed();
   }
 
   Future<void> _loadFeed() async {
-    final rawUrl = _currentFeedUrl.trim();
-    if (rawUrl.isEmpty) {
-      setState(() {
-        _error = 'Add an RSS or Atom feed URL in Library.';
-      });
-      return;
-    }
-
-    final uri = Uri.tryParse(rawUrl);
-    if (uri == null || !uri.hasScheme) {
-      setState(() {
-        _error = 'Invalid URL.';
-      });
-      return;
-    }
+    final configuredFeedUrls = widget.controller.savedFeeds.isEmpty
+        ? const <String>[_defaultFeed]
+        : widget.controller.savedFeeds;
 
     setState(() {
       _isLoading = true;
       _error = null;
     });
 
+    final combinedArticles = <FeedArticle>[];
+    final loadedFeedTitles = <String>[];
+    final failedFeeds = <String>[];
+
     try {
-      final result = await FeedRepository.fetch(uri);
-      widget.controller.recordFeed(uri.toString());
+      for (final rawUrl in configuredFeedUrls) {
+        final uri = Uri.tryParse(rawUrl.trim());
+        if (uri == null || !uri.hasScheme) {
+          failedFeeds.add(rawUrl);
+          continue;
+        }
+
+        try {
+          final result = await FeedRepository.fetch(uri);
+          loadedFeedTitles.add(result.title);
+          combinedArticles.addAll(
+            result.articles.map(
+              (article) => article.copyWith(
+                sourceTitle: result.title,
+                sourceUrl: uri.toString(),
+              ),
+            ),
+          );
+        } catch (_) {
+          failedFeeds.add(_hostOnly(rawUrl));
+        }
+      }
+
+      combinedArticles.sort(_compareArticleRecency);
+
       if (!mounted) return;
       setState(() {
-        _currentFeedUrl = uri.toString();
-        _feed = result;
+        _loadedFeedCount = loadedFeedTitles.length;
+        _feed = FeedLoadResult(
+          title: 'Unread',
+          description: loadedFeedTitles.isEmpty
+              ? 'No feeds loaded'
+              : 'Across ${loadedFeedTitles.length} feed${loadedFeedTitles.length == 1 ? '' : 's'}',
+          articles: combinedArticles,
+          feedTypeLabel: 'Unread',
+        );
         _lastLoadedAt = DateTime.now();
+        if (failedFeeds.isNotEmpty && loadedFeedTitles.isNotEmpty) {
+          _error =
+              '${failedFeeds.length} feed${failedFeeds.length == 1 ? '' : 's'} failed: ${failedFeeds.take(3).join(', ')}${failedFeeds.length > 3 ? '…' : ''}';
+        } else if (failedFeeds.isNotEmpty) {
+          _error =
+              'Failed to load feed${failedFeeds.length == 1 ? '' : 's'}: ${failedFeeds.take(3).join(', ')}${failedFeeds.length > 3 ? '…' : ''}';
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -238,7 +256,7 @@ class _FeedScreenState extends State<FeedScreen> {
         link: article.link,
         summary: article.summary,
         publishedLabel: article.publishedLabel,
-        feedTitle: _feed?.title,
+        feedTitle: article.sourceTitle ?? _feed?.title,
         openedAt: DateTime.now(),
       ),
     );
@@ -252,9 +270,14 @@ class _FeedScreenState extends State<FeedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final unreadArticles = (_feed?.articles ?? const <FeedArticle>[])
+        .where((article) => !widget.controller.isArticleRead(_articleReadKey(article)))
+        .toList();
+    final matchingUnreadCount = _filteredUnreadArticles(unreadArticles).length;
+
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
-        middle: const Text('RSS Reader'),
+        middle: const Text('Unread'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
           minimumSize: const Size.square(28),
@@ -284,16 +307,16 @@ class _FeedScreenState extends State<FeedScreen> {
               child: Row(
                 children: [
                   const Icon(
-                    CupertinoIcons.link,
+                    CupertinoIcons.list_bullet,
                     size: 14,
                     color: CupertinoColors.systemGrey,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      _currentFeedUrl.isEmpty
-                          ? 'No feed selected. Add one in Library.'
-                          : _hostOnly(_currentFeedUrl),
+                      _loadedFeedCount == 0
+                          ? 'No feeds loaded. Add feeds in Library.'
+                          : '$_loadedFeedCount feed${_loadedFeedCount == 1 ? '' : 's'} loaded',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -304,7 +327,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   ),
                   if (_searchQuery.trim().isNotEmpty)
                     Text(
-                      '${_filteredArticles(_feed?.articles ?? const <FeedArticle>[]).length} matches',
+                      '$matchingUnreadCount matches',
                       style: TextStyle(
                         fontSize: 12,
                         color: _secondaryLabelColor(context),
@@ -357,7 +380,10 @@ class _FeedScreenState extends State<FeedScreen> {
 
   Widget _buildFeedBody() {
     final allArticles = _feed?.articles ?? const <FeedArticle>[];
-    final articles = _filteredArticles(allArticles);
+    final unreadArticles = allArticles
+        .where((article) => !widget.controller.isArticleRead(_articleReadKey(article)))
+        .toList();
+    final articles = _filteredUnreadArticles(unreadArticles);
 
     if (_isLoading && allArticles.isEmpty) {
       return const Center(child: CupertinoActivityIndicator(radius: 14));
@@ -391,12 +417,35 @@ class _FeedScreenState extends State<FeedScreen> {
             child: _FeedHeaderCard(
               title: _feed?.title ?? 'Feed',
               subtitle: _feed?.description,
-              itemCount: articles.length,
+              itemCount: unreadArticles.length,
               lastLoadedAt: _lastLoadedAt,
               feedTypeLabel: _feed?.feedTypeLabel ?? 'Feed',
             ),
           ),
         ),
+        if (unreadArticles.isEmpty && _searchQuery.trim().isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _cardColor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _borderColor(context)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    'All caught up. Swipe actions marked articles as read.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _secondaryLabelColor(context),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (articles.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
@@ -429,9 +478,20 @@ class _FeedScreenState extends State<FeedScreen> {
                 return Padding(
                   padding:
                       EdgeInsets.only(bottom: index == articles.length - 1 ? 0 : 8),
-                  child: _ArticleTile(
-                    article: article,
-                    onTap: () => _openArticle(article),
+                  child: Dismissible(
+                    key: ValueKey<String>('${_articleReadKey(article)}::$index'),
+                    direction: DismissDirection.endToStart,
+                    background: const SizedBox.shrink(),
+                    secondaryBackground: _MarkReadSwipeBackground(
+                      label: 'Mark Read',
+                    ),
+                    onDismissed: (_) {
+                      widget.controller.markArticleRead(_articleReadKey(article));
+                    },
+                    child: _ArticleTile(
+                      article: article,
+                      onTap: () => _openArticle(article),
+                    ),
                   ),
                 );
               },
@@ -443,7 +503,7 @@ class _FeedScreenState extends State<FeedScreen> {
     );
   }
 
-  List<FeedArticle> _filteredArticles(List<FeedArticle> articles) {
+  List<FeedArticle> _filteredUnreadArticles(List<FeedArticle> articles) {
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return articles;
     return articles.where((article) => _matchesSearchQuery(article, query)).toList();
@@ -455,6 +515,7 @@ class _FeedScreenState extends State<FeedScreen> {
       article.summary,
       article.publishedLabel ?? '',
       article.link ?? '',
+      article.sourceTitle ?? '',
     ];
     for (final value in haystacks) {
       if (value.toLowerCase().contains(query)) {
@@ -746,6 +807,21 @@ class SettingsScreen extends StatelessWidget {
                                 color: CupertinoColors.systemRed,
                                 size: 18,
                               ),
+                        isLast: false,
+                      ),
+                      _LibraryRow(
+                        title: 'Read Article Marks',
+                        subtitle: '${controller.readArticleCount} hidden as read',
+                        onTap: controller.readArticleCount == 0
+                            ? null
+                            : controller.clearReadArticles,
+                        trailing: controller.readArticleCount == 0
+                            ? null
+                            : const Icon(
+                                CupertinoIcons.delete,
+                                color: CupertinoColors.systemRed,
+                                size: 18,
+                              ),
                         isLast: true,
                       ),
                     ],
@@ -783,13 +859,73 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-class ArticleScreen extends StatelessWidget {
+class ArticleScreen extends StatefulWidget {
   const ArticleScreen({super.key, required this.article});
 
   final FeedArticle article;
 
   @override
+  State<ArticleScreen> createState() => _ArticleScreenState();
+}
+
+class _ArticleScreenState extends State<ArticleScreen> {
+  WebViewController? _contentController;
+  bool _contentLoading = false;
+  bool _webViewReady = false;
+  Brightness? _loadedBrightness;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final brightness = CupertinoTheme.of(context).brightness;
+    if (_webViewReady && _loadedBrightness == brightness) return;
+    _loadedBrightness = brightness;
+    _prepareContentWebView(brightness);
+  }
+
+  void _prepareContentWebView(Brightness brightness) {
+    final raw = widget.article.summary.trim();
+    if (raw.isEmpty) {
+      _contentController = null;
+      _webViewReady = true;
+      _contentLoading = false;
+      return;
+    }
+
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) {
+            if (!mounted) return;
+            setState(() {
+              _contentLoading = true;
+            });
+          },
+          onPageFinished: (_) {
+            if (!mounted) return;
+            setState(() {
+              _contentLoading = false;
+            });
+          },
+        ),
+      );
+
+    _contentController = controller;
+    _webViewReady = true;
+    _contentLoading = true;
+    controller.loadHtmlString(
+      _buildArticleHtmlDocument(
+        widget.article,
+        darkMode: brightness == Brightness.dark,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final article = widget.article;
+
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: Text(
@@ -799,32 +935,15 @@ class ArticleScreen extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
-            Text(
-              article.title,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (article.publishedLabel != null && article.publishedLabel!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                article.publishedLabel!,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: _secondaryLabelColor(context),
-                ),
-              ),
-            ],
-            if (article.link != null && article.link!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              DecoratedBox(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: _cardColor(context),
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _borderColor(context)),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -832,92 +951,171 @@ class ArticleScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Link',
+                        article.title,
                         style: TextStyle(
-                          fontSize: 12,
-                          color: _secondaryLabelColor(context),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: _labelColor(context),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        article.link!,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          CupertinoButton(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            color: CupertinoColors.activeBlue,
-                            borderRadius: BorderRadius.circular(10),
-                            onPressed: () {
-                              final uri = Uri.tryParse(article.link!);
-                              if (uri == null) return;
-                              Navigator.of(context).push(
-                                CupertinoPageRoute<void>(
-                                  builder: (_) => ArticleWebViewScreen(
-                                    title: article.title,
-                                    uri: uri,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: const Text('Open In App'),
+                      if (article.sourceTitle != null &&
+                          article.sourceTitle!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          article.sourceTitle!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _secondaryLabelColor(context),
                           ),
-                          CupertinoButton(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            color: _secondaryButtonColor(context),
-                            borderRadius: BorderRadius.circular(10),
-                            onPressed: () {
-                              Clipboard.setData(ClipboardData(text: article.link!));
-                              showCupertinoDialog<void>(
-                                context: context,
-                                builder: (dialogContext) => CupertinoAlertDialog(
-                                  title: const Text('Copied'),
-                                  content: const Text(
-                                    'Article link copied to clipboard.',
-                                  ),
-                                  actions: [
-                                    CupertinoDialogAction(
-                                      onPressed: () =>
-                                          Navigator.of(dialogContext).pop(),
-                                      child: const Text('OK'),
+                        ),
+                      ],
+                      if (article.publishedLabel != null &&
+                          article.publishedLabel!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          article.publishedLabel!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _secondaryLabelColor(context),
+                          ),
+                        ),
+                      ],
+                      if (article.link != null && article.link!.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            CupertinoButton(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              color: CupertinoColors.activeBlue,
+                              borderRadius: BorderRadius.circular(10),
+                              onPressed: () {
+                                final uri = Uri.tryParse(article.link!);
+                                if (uri == null) return;
+                                Navigator.of(context).push(
+                                  CupertinoPageRoute<void>(
+                                    builder: (_) => ArticleWebViewScreen(
+                                      title: article.title,
+                                      uri: uri,
                                     ),
-                                  ],
-                                ),
-                              );
-                            },
-                            child: const Text('Copy Link'),
-                          ),
-                        ],
-                      ),
+                                  ),
+                                );
+                              },
+                              child: const Text(
+                                'Open In App',
+                                style: TextStyle(color: CupertinoColors.white),
+                              ),
+                            ),
+                            CupertinoButton(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              color: _secondaryButtonColor(context),
+                              borderRadius: BorderRadius.circular(10),
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: article.link!));
+                                showCupertinoDialog<void>(
+                                  context: context,
+                                  builder: (dialogContext) => CupertinoAlertDialog(
+                                    title: const Text('Copied'),
+                                    content: const Text(
+                                      'Article link copied to clipboard.',
+                                    ),
+                                    actions: [
+                                      CupertinoDialogAction(
+                                        onPressed: () =>
+                                            Navigator.of(dialogContext).pop(),
+                                        child: const Text('OK'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                'Copy Link',
+                                style: TextStyle(color: _labelColor(context)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
               ),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              article.summary.trim().isEmpty
-                  ? 'No description provided by the feed.'
-                  : _plainText(article.summary),
-              style: TextStyle(
-                fontSize: 15,
-                height: 1.35,
-                color: _labelColor(context),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _cardColor(context),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _borderColor(context)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: _buildArticleBody(context),
+                  ),
+                ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildArticleBody(BuildContext context) {
+    final summary = widget.article.summary.trim();
+    if (summary.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'No article content was provided by this feed entry.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: _secondaryLabelColor(context)),
+          ),
+        ),
+      );
+    }
+
+    final controller = _contentController;
+    if (controller == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            _plainText(summary),
+            style: TextStyle(color: _labelColor(context)),
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        WebViewWidget(controller: controller),
+        if (_contentLoading)
+          const Center(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemBackground,
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: CupertinoActivityIndicator(radius: 12),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1103,7 +1301,10 @@ class _ArticleWebViewScreenState extends State<ArticleWebViewScreen> {
                             ClipboardData(text: widget.uri.toString()),
                           );
                         },
-                        child: const Text('Copy URL'),
+                        child: Text(
+                          'Copy URL',
+                          style: TextStyle(color: _labelColor(context)),
+                        ),
                       ),
                     ],
                   ),
@@ -1276,12 +1477,14 @@ class AppController extends ChangeNotifier {
   static const _keyDarkMode = 'settings.darkMode';
   static const _keySavedFeeds = 'library.savedFeeds';
   static const _keyArticleHistory = 'library.articleHistory';
+  static const _keyReadArticleKeys = 'library.readArticleKeys';
 
   final SharedPreferences _prefs;
 
   bool _isDarkMode = false;
   List<String> _savedFeeds = <String>[];
   List<ArticleHistoryEntry> _articleHistory = <ArticleHistoryEntry>[];
+  Set<String> _readArticleKeys = <String>{};
   String _activeFeedUrl = '';
   int _feedSelectionTick = 0;
 
@@ -1295,6 +1498,7 @@ class AppController extends ChangeNotifier {
   bool get isDarkMode => _isDarkMode;
   List<String> get savedFeeds => List.unmodifiable(_savedFeeds);
   List<ArticleHistoryEntry> get articleHistory => List.unmodifiable(_articleHistory);
+  int get readArticleCount => _readArticleKeys.length;
   String get activeFeedUrl => _activeFeedUrl;
   int get feedSelectionTick => _feedSelectionTick;
 
@@ -1323,6 +1527,9 @@ class AppController extends ChangeNotifier {
         })
         .whereType<ArticleHistoryEntry>()
         .toList();
+
+    final readKeys = _prefs.getStringList(_keyReadArticleKeys) ?? const <String>[];
+    _readArticleKeys = readKeys.where((value) => value.trim().isNotEmpty).toSet();
 
     if (_savedFeeds.isNotEmpty) {
       _activeFeedUrl = _savedFeeds.first;
@@ -1398,6 +1605,27 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool isArticleRead(String articleKey) => _readArticleKeys.contains(articleKey);
+
+  void markArticleRead(String articleKey) {
+    if (articleKey.trim().isEmpty) return;
+    final added = _readArticleKeys.add(articleKey);
+    if (!added) return;
+    if (_readArticleKeys.length > 2000) {
+      final trimmed = _readArticleKeys.toList().reversed.take(1500).toSet();
+      _readArticleKeys = trimmed;
+    }
+    _persistReadArticleKeys();
+    notifyListeners();
+  }
+
+  void clearReadArticles() {
+    if (_readArticleKeys.isEmpty) return;
+    _readArticleKeys = <String>{};
+    _persistReadArticleKeys();
+    notifyListeners();
+  }
+
   bool _sameArticle(ArticleHistoryEntry a, ArticleHistoryEntry b) {
     if ((a.link ?? '').isNotEmpty && (b.link ?? '').isNotEmpty) {
       return a.link == b.link;
@@ -1410,6 +1638,10 @@ class AppController extends ChangeNotifier {
         .map((entry) => jsonEncode(entry.toJson()))
         .toList();
     _prefs.setStringList(_keyArticleHistory, encoded);
+  }
+
+  void _persistReadArticleKeys() {
+    _prefs.setStringList(_keyReadArticleKeys, _readArticleKeys.toList());
   }
 }
 
@@ -1449,12 +1681,34 @@ class FeedArticle {
     required this.summary,
     required this.link,
     required this.publishedLabel,
+    this.sourceTitle,
+    this.sourceUrl,
   });
 
   final String title;
   final String summary;
   final String? link;
   final String? publishedLabel;
+  final String? sourceTitle;
+  final String? sourceUrl;
+
+  FeedArticle copyWith({
+    String? title,
+    String? summary,
+    String? link,
+    String? publishedLabel,
+    String? sourceTitle,
+    String? sourceUrl,
+  }) {
+    return FeedArticle(
+      title: title ?? this.title,
+      summary: summary ?? this.summary,
+      link: link ?? this.link,
+      publishedLabel: publishedLabel ?? this.publishedLabel,
+      sourceTitle: sourceTitle ?? this.sourceTitle,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+    );
+  }
 }
 
 class ArticleHistoryEntry {
@@ -1509,6 +1763,7 @@ class ArticleHistoryEntry {
       summary: summary,
       link: link,
       publishedLabel: publishedLabel,
+      sourceTitle: feedTitle,
     );
   }
 }
@@ -1613,7 +1868,25 @@ class _ArticleTile extends StatelessWidget {
                         article.publishedLabel!.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(
-                        article.publishedLabel!,
+                        [
+                          if (article.sourceTitle != null &&
+                              article.sourceTitle!.trim().isNotEmpty)
+                            article.sourceTitle!.trim(),
+                          article.publishedLabel!,
+                        ].join('  |  '),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _secondaryLabelColor(context),
+                        ),
+                      ),
+                    ],
+                    if ((article.publishedLabel == null ||
+                            article.publishedLabel!.isEmpty) &&
+                        article.sourceTitle != null &&
+                        article.sourceTitle!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        article.sourceTitle!.trim(),
                         style: TextStyle(
                           fontSize: 12,
                           color: _secondaryLabelColor(context),
@@ -1860,6 +2133,46 @@ class _EmptySectionMessage extends StatelessWidget {
   }
 }
 
+class _MarkReadSwipeBackground extends StatelessWidget {
+  const _MarkReadSwipeBackground({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: CupertinoColors.activeGreen.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: CupertinoColors.activeGreen.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            const Icon(
+              CupertinoIcons.check_mark_circled,
+              color: CupertinoColors.activeGreen,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: CupertinoColors.activeGreen,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 Color _cardColor(BuildContext context) {
   return CupertinoDynamicColor.resolve(
     CupertinoColors.secondarySystemGroupedBackground,
@@ -1901,6 +2214,127 @@ String _hostOnly(String rawUrl) {
   if (host.isEmpty) return rawUrl;
   return host;
 }
+
+String _articleReadKey(FeedArticle article) {
+  final link = _nullIfBlank(article.link);
+  if (link != null) return 'link:$link';
+
+  final source = _nullIfBlank(article.sourceUrl) ?? _nullIfBlank(article.sourceTitle) ?? '';
+  final published = _nullIfBlank(article.publishedLabel) ?? '';
+  return 'fallback:${source}|${article.title}|$published';
+}
+
+int _compareArticleRecency(FeedArticle a, FeedArticle b) {
+  final aDate = _tryParseArticleDate(a.publishedLabel);
+  final bDate = _tryParseArticleDate(b.publishedLabel);
+  if (aDate != null && bDate != null) {
+    return bDate.compareTo(aDate);
+  }
+  if (aDate != null) return -1;
+  if (bDate != null) return 1;
+  return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+}
+
+DateTime? _tryParseArticleDate(String? value) {
+  final text = _nullIfBlank(value);
+  if (text == null) return null;
+  try {
+    return DateTime.parse(text).toUtc();
+  } catch (_) {
+    return null;
+  }
+}
+
+String _buildArticleHtmlDocument(FeedArticle article, {required bool darkMode}) {
+  final bodyRaw = article.summary.trim();
+  final hasMarkup = _looksLikeHtml(bodyRaw);
+  final bodyHtml = hasMarkup
+      ? bodyRaw
+      : '<p>${_escapeHtml(bodyRaw).replaceAll('\n', '<br>')}</p>';
+  final title = _escapeHtml(article.title);
+  final sourceTitle = _escapeHtml(article.sourceTitle ?? '');
+  final published = _escapeHtml(article.publishedLabel ?? '');
+  final link = _escapeHtml(article.link ?? '');
+
+  final bg = darkMode ? '#111111' : '#ffffff';
+  final text = darkMode ? '#f5f5f7' : '#111111';
+  final muted = darkMode ? '#a1a1aa' : '#6b7280';
+  final border = darkMode ? '#2b2b2f' : '#e5e7eb';
+  final card = darkMode ? '#16161a' : '#ffffff';
+
+  return '''
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <style>
+      :root { color-scheme: ${darkMode ? 'dark' : 'light'}; }
+      body {
+        margin: 0;
+        padding: 14px;
+        background: $bg;
+        color: $text;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.45;
+        word-wrap: break-word;
+      }
+      .meta {
+        margin-bottom: 12px;
+        padding: 12px;
+        background: $card;
+        border: 1px solid $border;
+        border-radius: 12px;
+      }
+      .title {
+        margin: 0 0 8px;
+        font-size: 22px;
+        font-weight: 700;
+      }
+      .sub {
+        color: $muted;
+        font-size: 12px;
+        margin: 2px 0;
+      }
+      .content {
+        background: $card;
+        border: 1px solid $border;
+        border-radius: 12px;
+        padding: 14px;
+      }
+      img, video {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+      }
+      figure { margin: 0; }
+      pre, code {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      a { color: #0a84ff; }
+      table { width: 100%; border-collapse: collapse; }
+    </style>
+  </head>
+  <body>
+    <div class="meta">
+      <h1 class="title">$title</h1>
+      ${sourceTitle.isEmpty ? '' : '<div class="sub">$sourceTitle</div>'}
+      ${published.isEmpty ? '' : '<div class="sub">$published</div>'}
+      ${link.isEmpty ? '' : '<div class="sub"><a href="$link">$link</a></div>'}
+    </div>
+    <div class="content">
+      $bodyHtml
+    </div>
+  </body>
+</html>
+''';
+}
+
+bool _looksLikeHtml(String value) {
+  return RegExp(r'<[a-zA-Z][^>]*>').hasMatch(value);
+}
+
+String _escapeHtml(String value) => htmlEscape.convert(value);
 
 String _plainTextPreview(String value, int maxChars) {
   final text = _plainText(value).replaceAll(RegExp(r'\s+'), ' ').trim();

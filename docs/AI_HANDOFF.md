@@ -6,8 +6,11 @@ This repository contains a Flutter Android RSS reader with a Cupertino-style UI 
 
 Current major features:
 - RSS + Atom feed parsing
-- In-app article web view (`webview_flutter`)
-- Saved feeds and recent article history (local persistence via `shared_preferences`)
+- Unread article timeline aggregated across saved feeds
+- Swipe-to-mark-read on articles
+- Formatted article reader (HTML/images rendered via embedded WebView)
+- In-app article web view (`webview_flutter`) for source pages
+- Saved feeds, read marks, and recent article history (local persistence via `shared_preferences`)
 - Settings page with dark mode toggle
 - GitHub Actions workflow that builds a release APK artifact
 
@@ -54,6 +57,7 @@ High-level structure:
 - Dark mode setting (`settings.darkMode`)
 - Saved feeds list (`library.savedFeeds`)
 - Recent article history (`library.articleHistory`)
+- Read article keys (`library.readArticleKeys`)
 - Active feed URL and a `feedSelectionTick` counter to notify Feed tab when selection changes
 
 Feed list behavior:
@@ -64,20 +68,28 @@ Article history behavior:
 - Records opened articles with title/link/summary/feed title/opened timestamp
 - Deduplicates by link when available
 
+Read/unread behavior:
+- Feed tab hides articles whose read key is present in `readArticleKeys`
+- Swiping an article row marks it as read
+- Settings page includes a way to clear read marks
+
 ## Feed Tab UX (Current)
 
 The feed tab no longer contains a feed URL input.
 
 Current behavior:
 - Feed source is selected/added in the **Library** tab
+- Feed tab aggregates unread articles from all saved feeds (or default feed if none are saved)
 - Feed tab shows:
-  - Search field (article filtering within the currently loaded feed)
-  - Current feed source label (host)
+  - Search field (article filtering within the unread aggregate list)
+  - Loaded feed count indicator
   - Refresh button in nav bar
   - Feed header card and article list
+  - Swipe gesture (`end-to-start`) on article rows to mark as read
 
 Search behavior:
 - Filters by title, summary, published label, or link (case-insensitive)
+- Also matches source feed title
 - If no matches are found, feed header remains visible and an in-list “No articles match ...” card is shown
 
 ## Library Tab UX (Current)
@@ -92,6 +104,10 @@ Recent Articles section:
 - Shows locally stored history
 - Tapping an entry opens the article detail screen
 - `Clear` action removes history
+
+Article reader:
+- `ArticleScreen` now renders feed-provided HTML content in an embedded WebView so formatting/images can display
+- “Open In App” still opens the source URL page in the dedicated browser WebView screen
 
 ## Design / Theming Notes
 
