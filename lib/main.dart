@@ -410,7 +410,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(14),
                   child: Text(
-                    'No articles match \"${_searchQuery.trim()}\".',
+                    'No articles match "${_searchQuery.trim()}".',
                     style: TextStyle(
                       fontSize: 14,
                       color: _secondaryLabelColor(context),
