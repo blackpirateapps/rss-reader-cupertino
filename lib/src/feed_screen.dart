@@ -1,4 +1,4 @@
-part of ../main.dart;
+part of 'package:rss_reader_cupertino/main.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key, required this.controller});

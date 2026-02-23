@@ -1,4 +1,4 @@
-part of ../main.dart;
+part of 'package:rss_reader_cupertino/main.dart';
 
 Color _cardColor(BuildContext context) {
   return CupertinoDynamicColor.resolve(

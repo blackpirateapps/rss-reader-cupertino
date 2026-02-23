@@ -1,4 +1,4 @@
-part of ../main.dart;
+part of 'package:rss_reader_cupertino/main.dart';
 
 class _FeedHeaderCard extends StatelessWidget {
   const _FeedHeaderCard({
