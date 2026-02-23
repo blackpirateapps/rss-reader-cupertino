@@ -7,10 +7,12 @@ This repository contains a Flutter Android RSS reader with a Cupertino-style UI 
 Current major features:
 - RSS + Atom feed parsing
 - Unread article timeline aggregated across saved feeds
+- Feed filters for All / Unread / Read in the Feed tab (Unread default)
 - Swipe-to-mark-read on articles
-- Formatted article reader (HTML/images rendered via embedded WebView)
+- Native Cupertino article detail preview (single scroll, no embedded reader WebView)
 - In-app article web view (`webview_flutter`) for source pages
 - Saved feeds, read marks, and recent article history (local persistence via `shared_preferences`)
+- Feed URL backup import/export (plain text file, one URL per line)
 - Settings page with dark mode toggle
 - GitHub Actions workflow that builds a release APK artifact
 
@@ -85,8 +87,9 @@ Current behavior:
 - Feed fetch currently loops feeds sequentially (not parallel)
 - Feed tab shows:
   - Search field (article filtering within the unread aggregate list)
+  - Cupertino pill/segmented filters for All / Unread / Read (default Unread)
   - Loaded feed count indicator
-  - Refresh button in nav bar
+  - Refresh and quick-add (`+`) buttons in nav bar
   - Feed header card and article list
   - Swipe gesture (`end-to-start`) on article rows to mark as read
 - Aggregated article rows include source feed title (when available)
@@ -118,10 +121,14 @@ Storage / settings behavior:
   - Read article marks
 
 Article reader:
-- `ArticleScreen` now renders feed-provided HTML content in an embedded WebView so formatting/images can display
-- This renders feed entry content/summary, not a freshly fetched full article page
-- “Open In App” still opens the source URL page in the dedicated browser WebView screen
-- “Open In App” and “Copy Link” buttons have explicit text colors for dark mode readability
+- `ArticleScreen` now uses a native Cupertino scroll view with a single title/header and native text preview of feed content
+- “Read Full Story” opens the source URL page in the dedicated browser WebView screen
+- Copy link is an icon-only action in the article header card
+
+Feed backup import/export:
+- Library tab includes import/export actions for feed URLs
+- Backup format is plain text (`.txt`), one feed URL per line
+- Import skips invalid/non-URL lines and duplicate URLs already saved
 
 ## Design / Theming Notes
 
