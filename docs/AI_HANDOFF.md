@@ -19,6 +19,7 @@ Current major features:
 - The local machine used during development did not have Flutter installed, so changes were made without local execution/testing.
 - CI (`.github/workflows/build-apk.yml`) is the primary validation path.
 - The repo intentionally does not commit the `android/` directory. CI generates it using `flutter create --platforms=android ...`.
+- `flutter analyze` is run in CI before the APK build. Treat analyzer warnings/info seriously because CI will stop before build if analysis fails.
 
 ## CI / Build Workflow (Key Behavior)
 
@@ -72,6 +73,7 @@ Read/unread behavior:
 - Feed tab hides articles whose read key is present in `readArticleKeys`
 - Swiping an article row marks it as read
 - Settings page includes a way to clear read marks
+- Read keys are generated from article link when available; otherwise a fallback key uses source + title + published label
 
 ## Feed Tab UX (Current)
 
@@ -80,17 +82,20 @@ The feed tab no longer contains a feed URL input.
 Current behavior:
 - Feed source is selected/added in the **Library** tab
 - Feed tab aggregates unread articles from all saved feeds (or default feed if none are saved)
+- Feed fetch currently loops feeds sequentially (not parallel)
 - Feed tab shows:
   - Search field (article filtering within the unread aggregate list)
   - Loaded feed count indicator
   - Refresh button in nav bar
   - Feed header card and article list
   - Swipe gesture (`end-to-start`) on article rows to mark as read
+- Aggregated article rows include source feed title (when available)
 
 Search behavior:
 - Filters by title, summary, published label, or link (case-insensitive)
 - Also matches source feed title
 - If no matches are found, feed header remains visible and an in-list “No articles match ...” card is shown
+- If all unread items are gone and no search is active, feed tab shows an “All caught up” card
 
 ## Library Tab UX (Current)
 
@@ -99,15 +104,24 @@ Saved Feeds section:
 - Add flow uses a Cupertino dialog with URL validation
 - Tapping a saved feed selects it and switches to the Feed tab
 - Delete button removes a saved feed
+- Even though Feed tab is aggregated, selecting a feed still updates `activeFeedUrl` and triggers a refresh (kept for compatibility and future use)
 
 Recent Articles section:
 - Shows locally stored history
 - Tapping an entry opens the article detail screen
 - `Clear` action removes history
 
+Storage / settings behavior:
+- Settings page can clear:
+  - Saved feeds
+  - Recent article history
+  - Read article marks
+
 Article reader:
 - `ArticleScreen` now renders feed-provided HTML content in an embedded WebView so formatting/images can display
+- This renders feed entry content/summary, not a freshly fetched full article page
 - “Open In App” still opens the source URL page in the dedicated browser WebView screen
+- “Open In App” and “Copy Link” buttons have explicit text colors for dark mode readability
 
 ## Design / Theming Notes
 
@@ -123,11 +137,20 @@ Article reader:
 - Tries RSS parsing first (`RssFeed.parse`)
 - Falls back to Atom parsing (`AtomFeed.parse`) using defensive dynamic access
 - Atom parsing is intentionally tolerant because `webfeed_plus` Atom models vary between versions
+- Aggregation attaches source metadata (`sourceTitle`, `sourceUrl`) to each `FeedArticle`
 
 ### RSS `pubDate` Type Gotcha
 
 `webfeed_plus` may expose `RssItem.pubDate` as `DateTime` (not `String`) depending on version/runtime.
 The code now normalizes with `item.pubDate?.toString()` before storing display text.
+
+### Date Sorting Limitation (Current)
+
+Unread feed sorting uses `_tryParseArticleDate()` with `DateTime.parse(...)`.
+- ISO timestamps sort correctly
+- Non-ISO RSS pubDate strings may fail parsing and then fall back to title-based ordering
+
+If ordering quality becomes an issue, add a proper RFC822 parser (e.g. `intl` `DateFormat`) and/or store parsed dates in `FeedArticle`.
 
 ## Content Sanitization Notes
 
@@ -136,11 +159,23 @@ The code now normalizes with `item.pubDate?.toString()` before storing display t
 - `&lsquo;`
 - `&#8217;`
 
+Separate from `_plainText()`, article detail rendering uses `_buildArticleHtmlDocument(...)` to wrap feed HTML in a minimal style sheet for readable dark/light rendering and responsive images.
+
+## CI / Analyzer Compatibility Gotchas (Already Addressed)
+
+Several fixes were required due to Flutter stable version differences and analyzer behavior:
+- `CupertinoButton.minSize` -> `minimumSize: const Size.square(...)`
+- `CupertinoTheme.of(context).brightness` can be nullable on some SDK versions, so code coalesces to `Brightness.light`
+- `CupertinoTabBar` cannot be `const` in this code path due to const-eval restrictions on the items list
+- `cupertino_icons` dependency is required or icons may appear as missing glyph boxes
+- Placeholder `test/widget_test.dart` prevents generated default `MyApp` test analyzer failures after CI runs `flutter create`
+
 ## Files Most Likely to Be Edited Next
 
 - `lib/main.dart` (currently contains all app logic/UI)
 - `.github/workflows/build-apk.yml` (CI behavior)
 - `pubspec.yaml` (dependencies)
+- `docs/AI_HANDOFF.md` (keep in sync after feature changes)
 
 ## Suggested Future Refactor (Optional)
 
