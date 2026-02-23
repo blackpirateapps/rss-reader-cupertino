@@ -74,7 +74,7 @@ class _HomeShellState extends State<HomeShell> {
 
     return CupertinoTabScaffold(
       controller: _tabController,
-      tabBar: const CupertinoTabBar(
+      tabBar: CupertinoTabBar(
         items: [
           BottomNavigationBarItem(
             icon: Icon(CupertinoIcons.list_bullet),
@@ -223,10 +223,11 @@ class _FeedScreenState extends State<FeedScreen> {
         _error = e.toString().replaceFirst('Exception: ', '');
       });
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -258,7 +259,7 @@ class _FeedScreenState extends State<FeedScreen> {
         middle: const Text('RSS Reader'),
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
-          minSize: 28,
+          minimumSize: 28,
           onPressed: _isLoading
               ? null
               : () {
@@ -271,7 +272,7 @@ class _FeedScreenState extends State<FeedScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          minSize: 28,
+          minimumSize: 28,
           onPressed: _isLoading ? null : _loadFeed,
           child: _isLoading
               ? const CupertinoActivityIndicator(radius: 8)
@@ -352,7 +353,7 @@ class _FeedScreenState extends State<FeedScreen> {
                       ),
                     );
                   },
-                  separatorBuilder: (_, _) => const SizedBox(width: 8),
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemCount: widget.controller.savedFeeds.length,
                 ),
               ),
@@ -362,10 +363,10 @@ class _FeedScreenState extends State<FeedScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: CupertinoColors.systemRed.withOpacity(0.10),
+                    color: CupertinoColors.systemRed.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: CupertinoColors.systemRed.withOpacity(0.25),
+                      color: CupertinoColors.systemRed.withValues(alpha: 0.25),
                     ),
                   ),
                   child: Padding(
@@ -528,7 +529,7 @@ class LibraryScreen extends StatelessWidget {
                                 onTap: () => onOpenFeed(controller.savedFeeds[i]),
                                 trailing: CupertinoButton(
                                   padding: EdgeInsets.zero,
-                                  minSize: 28,
+                                  minimumSize: 28,
                                   onPressed: () =>
                                       controller.removeSavedFeed(controller.savedFeeds[i]),
                                   child: const Icon(
@@ -938,7 +939,7 @@ class _ArticleWebViewScreenState extends State<ArticleWebViewScreen> {
         ),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          minSize: 28,
+          minimumSize: 28,
           onPressed: () {
             _webViewController.reload();
           },
@@ -953,10 +954,10 @@ class _ArticleWebViewScreenState extends State<ArticleWebViewScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: CupertinoColors.systemRed.withOpacity(0.10),
+                    color: CupertinoColors.systemRed.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: CupertinoColors.systemRed.withOpacity(0.25),
+                      color: CupertinoColors.systemRed.withValues(alpha: 0.25),
                     ),
                   ),
                   child: Padding(
@@ -1646,7 +1647,7 @@ class _SectionCard extends StatelessWidget {
                 if (actionLabel != null)
                   CupertinoButton(
                     padding: EdgeInsets.zero,
-                    minSize: 28,
+                    minimumSize: 28,
                     onPressed: onAction,
                     child: Text(actionLabel!),
                   ),
@@ -1825,7 +1826,7 @@ Color _borderColor(BuildContext context) {
   return CupertinoDynamicColor.resolve(
     CupertinoColors.separator,
     context,
-  ).withOpacity(0.35);
+  ).withValues(alpha: 0.35);
 }
 
 Color _secondaryButtonColor(BuildContext context) {
