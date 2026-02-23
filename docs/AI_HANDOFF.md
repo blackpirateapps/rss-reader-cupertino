@@ -192,6 +192,7 @@ Several fixes were required due to Flutter stable version differences and analyz
 - `cupertino_icons` dependency is required or icons may appear as missing glyph boxes
 - Prefer `RegExp(..., caseSensitive: false)` over inline `(?i)` flags to satisfy Dart analyzer regex validation
 - Prefer `minimumSize` on `CupertinoButton` (avoid `minSize`) for Flutter stable compatibility
+- `package:html` DOM APIs may expose values as `Object` in analyzer contexts (e.g. `className`, attribute keys); cast/toString defensively
 - Placeholder `test/widget_test.dart` prevents generated default `MyApp` test analyzer failures after CI runs `flutter create`
 
 ## Files Most Likely to Be Edited Next

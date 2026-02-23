@@ -446,7 +446,7 @@ class _FeedScreenState extends State<FeedScreen> {
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: _sourceFilterOptions.length + 1,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
                     itemBuilder: (context, index) {
                       if (index == 0) {
                         final allSelected = _selectedSourceFeedUrls.isEmpty;
@@ -3125,8 +3125,7 @@ dom.Element? _extractReaderContentNode(dom.Document document) {
     final node = document.querySelector(selector);
     if (node == null) continue;
     if (_readerTextLength(node) >= 200) {
-      final cloned = node.clone(true);
-      if (cloned is dom.Element) return cloned;
+      return node.clone(true);
     }
   }
 
@@ -3142,16 +3141,13 @@ dom.Element? _extractReaderContentNode(dom.Document document) {
   }
 
   if (best != null && _readerTextLength(best) >= 120) {
-    final cloned = best.clone(true);
-    if (cloned is dom.Element) return cloned;
+    return best.clone(true);
   }
 
   final body = document.body;
   if (body == null) return null;
   if (_readerTextLength(body) < 80) return null;
-  final cloned = body.clone(true);
-  if (cloned is dom.Element) return cloned;
-  return null;
+  return body.clone(true);
 }
 
 double _readerContentScore(dom.Element element) {
@@ -3164,12 +3160,17 @@ double _readerContentScore(dom.Element element) {
       .map((link) => _normalizedText(link.text).length)
       .fold<int>(0, (sum, value) => sum + value);
   final linkDensity = textLen == 0 ? 0 : linkTextLen / textLen;
-  final classPenalty = (element.className.toLowerCase().contains('comment') ||
-          element.className.toLowerCase().contains('footer') ||
+  final className = element.className.toString().toLowerCase();
+  final classPenalty = (className.contains('comment') ||
+          className.contains('footer') ||
           element.id.toLowerCase().contains('comment'))
       ? 200
       : 0;
-  return textLen + (pCount * 80) + (imgCount * 35) - (linkDensity * 220) - classPenalty;
+  return textLen.toDouble() +
+      (pCount * 80).toDouble() +
+      (imgCount * 35).toDouble() -
+      (linkDensity * 220) -
+      classPenalty.toDouble();
 }
 
 int _readerTextLength(dom.Element element) => _normalizedText(element.text).length;
@@ -3206,7 +3207,7 @@ void _sanitizeReaderContent(dom.Element root, Uri baseUri) {
       }
     }
 
-    final attrs = element.attributes.keys.toList();
+    final attrs = element.attributes.keys.map((key) => key.toString()).toList();
     for (final attr in attrs) {
       final lower = attr.toLowerCase();
       if (lower.startsWith('on')) {
